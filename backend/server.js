@@ -1,4 +1,4 @@
-﻿import { createServer } from 'node:http'
+import { createServer } from 'node:http'
 import { URL } from 'node:url'
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -131,6 +131,135 @@ async function sheetsHandler(url) {
   }
 }
 
+const banpemDemoRows = [
+  { tahun: 2026, provinsi: 'Jawa Timur', kabupatenKota: 'Ngawi', targetHa: 1850, cpclKab: 1760, skBrmpHa: 1700, skKpaHa: 1640, skPpkHa: 1580, klikHa: 1500, klikRp: 9750000000, kontrakHa: 1420, nilaiKontrakRp: 9230000000, belumKontrakHa: 430, spmRp: 7800000000, sp2dRp: 6500000000, salurHa: 1000, tanamHa: 875, keterangan: '' },
+  { tahun: 2026, provinsi: 'Jawa Tengah', kabupatenKota: 'Grobogan', targetHa: 1575, cpclKab: 1490, skBrmpHa: 1450, skKpaHa: 1380, skPpkHa: 1320, klikHa: 1260, klikRp: 8190000000, kontrakHa: 1210, nilaiKontrakRp: 7865000000, belumKontrakHa: 365, spmRp: 6700000000, sp2dRp: 5520000000, salurHa: 845, tanamHa: 720, keterangan: '' },
+  { tahun: 2026, provinsi: 'Sulawesi Selatan', kabupatenKota: 'Bone', targetHa: 1120, cpclKab: 1040, skBrmpHa: 1010, skKpaHa: 960, skPpkHa: 900, klikHa: 845, klikRp: 5492500000, kontrakHa: 860, nilaiKontrakRp: 5590000000, belumKontrakHa: 260, spmRp: 4700000000, sp2dRp: 3900000000, salurHa: 590, tanamHa: 505, keterangan: 'Data contoh mode demo.' },
+]
+
+function numeric(value) {
+  const cleaned = clean(value)
+  return typeof cleaned === 'number' && Number.isFinite(cleaned) ? cleaned : 0
+}
+
+function normalizeHeader(value) {
+  return String(value ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function findHeaderIndex(headers, aliases) {
+  const normalizedHeaders = headers.map(normalizeHeader)
+  const normalizedAliases = aliases.map(normalizeHeader)
+  const exact = normalizedHeaders.findIndex(header => normalizedAliases.includes(header))
+  if (exact >= 0) return exact
+  return normalizedHeaders.findIndex(header => normalizedAliases.some(alias => header.includes(alias) || alias.includes(header)))
+}
+
+function banpemHeaderMap(headers) {
+  return {
+    tahun: findHeaderIndex(headers, ['Tahun']),
+    provinsi: findHeaderIndex(headers, ['Provinsi']),
+    kabupatenKota: findHeaderIndex(headers, ['Kabupaten/Kota', 'Kabupaten Kota', 'Kab/Kota']),
+    targetHa: findHeaderIndex(headers, ['Target (Ha)', 'Target Ha']),
+    cpclKab: findHeaderIndex(headers, ['CPCL KAB', 'CPCL Kabupaten']),
+    skBrmpHa: findHeaderIndex(headers, ['SK BRMP (Ha)', 'SK BRMP Ha']),
+    skKpaHa: findHeaderIndex(headers, ['SK KPA (Ha)', 'SK KPA Ha']),
+    skPpkHa: findHeaderIndex(headers, ['SK PPK (Ha)', 'SK PPK Ha']),
+    klikHa: findHeaderIndex(headers, ['Klik (Ha)', 'Klik Ha']),
+    klikRp: findHeaderIndex(headers, ['Klik (Rp)', 'Klik Rp']),
+    kontrakHa: findHeaderIndex(headers, ['Kontrak (Ha)', 'Kontrak Ha']),
+    nilaiKontrakRp: findHeaderIndex(headers, ['Nilai Kontrak (Rp)', 'Nilai Kontrak Rp', 'Nilai Kontrak']),
+    belumKontrakHa: findHeaderIndex(headers, ['Belum Kontrak (Ha)', 'Belum Kontrak Ha']),
+    spmRp: findHeaderIndex(headers, ['SPM (Rp)', 'SPM Rp']),
+    sp2dRp: findHeaderIndex(headers, ['SP2D (Rp)', 'SP2D Rp']),
+    salurHa: findHeaderIndex(headers, ['Salur (Ha)', 'Salur Ha']),
+    tanamHa: findHeaderIndex(headers, ['Tanam (Ha)', 'Tanam Ha']),
+    keterangan: findHeaderIndex(headers, ['Keterangan', 'Catatan', 'Keterangan/Catatan', 'Ket']),
+  }
+}
+
+function valueAt(row, index) {
+  return index >= 0 ? row[index] : ''
+}
+
+function textAt(row, index) {
+  return String(valueAt(row, index) ?? '').trim()
+}
+
+function parseBanpemValues(values) {
+  const headers = Array.isArray(values[0]) ? values[0] : []
+  const map = banpemHeaderMap(headers)
+  if (map.tahun < 0) return []
+  return values.slice(1).map(row => ({
+    tahun: numeric(valueAt(row, map.tahun)),
+    provinsi: textAt(row, map.provinsi),
+    kabupatenKota: textAt(row, map.kabupatenKota),
+    targetHa: numeric(valueAt(row, map.targetHa)),
+    cpclKab: numeric(valueAt(row, map.cpclKab)),
+    skBrmpHa: numeric(valueAt(row, map.skBrmpHa)),
+    skKpaHa: numeric(valueAt(row, map.skKpaHa)),
+    skPpkHa: numeric(valueAt(row, map.skPpkHa)),
+    klikHa: numeric(valueAt(row, map.klikHa)),
+    klikRp: numeric(valueAt(row, map.klikRp)),
+    kontrakHa: numeric(valueAt(row, map.kontrakHa)),
+    nilaiKontrakRp: numeric(valueAt(row, map.nilaiKontrakRp)),
+    belumKontrakHa: numeric(valueAt(row, map.belumKontrakHa)),
+    spmRp: numeric(valueAt(row, map.spmRp)),
+    sp2dRp: numeric(valueAt(row, map.sp2dRp)),
+    salurHa: numeric(valueAt(row, map.salurHa)),
+    tanamHa: numeric(valueAt(row, map.tanamHa)),
+    keterangan: textAt(row, map.keterangan),
+  })).filter(row => row.tahun)
+}
+
+const banpemNumericFields = ['targetHa', 'cpclKab', 'skBrmpHa', 'skKpaHa', 'skPpkHa', 'klikHa', 'klikRp', 'kontrakHa', 'nilaiKontrakRp', 'belumKontrakHa', 'spmRp', 'sp2dRp', 'salurHa', 'tanamHa']
+
+function hasBanpemData(row) {
+  return banpemNumericFields.some(field => row[field] > 0)
+}
+
+function banpemYears(rows) {
+  return [...new Set(rows.map(row => row.tahun).filter(Boolean))].sort((a, b) => a - b)
+}
+
+function defaultBanpemYear(rows) {
+  const yearsWithData = banpemYears(rows).filter(year => rows.some(row => row.tahun === year && hasBanpemData(row)))
+  return yearsWithData.at(-1) || banpemYears(rows).at(-1) || 2026
+}
+
+function banpemBody(source, rows, options, range) {
+  const years = banpemYears(rows)
+  const requestedYear = Number(options?.year)
+  const selectedYear = Number.isFinite(requestedYear) && requestedYear > 0 ? requestedYear : defaultBanpemYear(rows)
+  const filteredRows = rows.filter(row => row.tahun === selectedYear)
+  return { source, years, rows: filteredRows, selectedYear, range, ...(options?.text ? { message: options.text } : {}) }
+}
+
+async function banpemSheetHandler(url) {
+  const range = url.searchParams.get('range') || 'MASTERBANPEM!A:Z'
+  const forceRefresh = url.searchParams.get('refresh') === '1'
+  const key = process.env.GOOGLE_SHEETS_API_KEY?.trim()
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim()
+  const requestedYear = Number(url.searchParams.get('year'))
+  const requestOptions = { year: Number.isFinite(requestedYear) ? requestedYear : undefined }
+  const demo = message => ({ status: 200, body: banpemBody('demo', banpemDemoRows, { ...requestOptions, text: message }, range) })
+
+  if (!key || !spreadsheetId || key.startsWith('your_') || spreadsheetId.startsWith('your_')) {
+    return demo('Google Sheets credentials are not configured.')
+  }
+
+  const cacheKey = `${spreadsheetId}:banpem:${range}`
+  try {
+    const values = await fetchSheetValues(spreadsheetId, range, key, cacheKey, forceRefresh)
+    const rows = parseBanpemValues(values)
+    if (!rows.length) return demo('Data BANPEM belum tersedia; menampilkan data contoh.')
+    return { status: 200, body: banpemBody('sheet', rows, requestOptions, range) }
+  } catch (error) {
+    const cached = responseCache.get(cacheKey)
+    const cachedRows = cached ? parseBanpemValues(cached.values) : []
+    if (cachedRows.length) return { status: 200, body: banpemBody('sheet', cachedRows, { ...requestOptions, text: 'Menggunakan cache terakhir karena koneksi sedang bermasalah.' }, range) }
+    return demo(error?.name === 'AbortError' ? 'Google Sheets terlalu lama merespons; menampilkan data contoh.' : 'Google Sheets belum siap; menampilkan data contoh.')
+  }
+}
 function sendJson(response, status, body) {
   response.writeHead(status, {
     'Access-Control-Allow-Origin': CORS_ORIGIN,
@@ -159,6 +288,10 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/api/health') return sendJson(response, 200, { status: 'ok', service: 'akabi-backend' })
     if (request.method === 'GET' && url.pathname === '/api/sheets') {
       const result = await sheetsHandler(url)
+      return sendJson(response, result.status, result.body)
+    }
+    if (request.method === 'GET' && url.pathname === '/api/banpem-sheet') {
+      const result = await banpemSheetHandler(url)
       return sendJson(response, result.status, result.body)
     }
     if (request.method === 'POST' && url.pathname === '/api/export-auth') {

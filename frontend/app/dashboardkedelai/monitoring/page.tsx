@@ -1,6 +1,5 @@
 ﻿'use client'
 
-import Image from 'next/image'
 import { useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -8,8 +7,6 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
-  Bell,
-  Home,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -17,11 +14,9 @@ import {
   Download,
   Filter,
   Leaf,
-  Moon,
   RefreshCw,
   Search,
   Settings,
-  Sun,
   X,
 } from 'lucide-react'
 import {
@@ -34,6 +29,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import DashboardHeader from '../../../components/DashboardHeader'
 import { apiUrl } from '../../../lib/api'
 import { months, parseSheetValues, regions as demoRegions, Region } from '../../../lib/data'
 
@@ -53,7 +49,6 @@ const productivity = (row: Region) => row.harvested > 0 ? row.production * 10 / 
 const percentChange = (current: number, previous: number) => previous ? ((current - previous) / Math.abs(previous)) * 100 : 0
 
 export default function Dashboard() {
-  const [dark, setDark] = useState(true)
   const [activePanel, setActivePanel] = useState<'filter' | 'settings' | 'notice' | null>(null)
   const [hasUnreadNotification, setHasUnreadNotification] = useState(false)
   const [notificationText, setNotificationText] = useState('')
@@ -235,32 +230,21 @@ export default function Dashboard() {
   }
 
   return (
-    <div className={dark ? 'dark' : ''}>
+    <div>
       <div className="min-h-screen bg-canvas dark:bg-[#061a13] grid-pattern transition-colors">
         <main>
-          <header className="relative flex min-h-[76px] items-center justify-between border-b border-slate-200/70 bg-white/55 px-5 backdrop-blur-xl dark:border-white/10 dark:bg-[#081f16]/60 md:px-9">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-xl bg-white shadow-sm"><Image src="/logo-akabi-removebg-preview.png" alt="Logo resmi AKABI" width={40} height={40} className="h-full w-full object-contain p-1" priority/></div>
-              <div><b className="text-lg tracking-tight text-ink dark:text-white">AKABI</b><p className="text-[10px] font-bold uppercase tracking-[.22em] text-slate-400">Kedelai Insight</p></div>
-            </div>
-            <div className="absolute left-1/2 hidden -translate-x-1/2 items-center text-xs text-slate-600 dark:text-slate-200 md:flex"><b>Dashboard Monitoring</b></div>
-            <div className="ml-auto flex items-center gap-2">
-
-              <label className="hidden items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-500 shadow-sm dark:bg-[#102b20] dark:text-slate-200 md:flex"><Search size={15} /><input aria-label="Cari nama wilayah" value={query} onChange={event => setQuery(event.target.value)} className="w-32 bg-transparent text-slate-700 outline-none placeholder:text-slate-400 dark:text-white" placeholder="Cari nama wilayah..." /></label>              <a href="/" aria-label="Dashboard utama" title="Dashboard utama" className="rounded-xl bg-white p-2.5 text-slate-600 shadow-sm dark:bg-white/10 dark:text-slate-200"><Home size={18} /></a>
-              <div className="relative">
-                <button aria-label="Notifikasi" data-panel-trigger onClick={() => { if (activePanel !== 'notice') setHasUnreadNotification(false); setActivePanel(activePanel === 'notice' ? null : 'notice') }} className="relative rounded-xl bg-white p-2.5 text-slate-600 shadow-sm dark:bg-white/10 dark:text-slate-200">
-                  <Bell size={18} />{hasUnreadNotification && <i className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-red-400" />}
-                </button>
-                {activePanel === 'notice' && <div data-panel-content className="absolute right-0 top-12 z-40 w-72 rounded-2xl border border-slate-200 bg-white p-4 text-xs shadow-xl dark:border-white/10 dark:bg-[#102b20]">
-                  <div className="flex items-start justify-between gap-3"><b className="dark:text-white">Notifikasi</b><button aria-label="Tutup notifikasi" onClick={() => setActivePanel(null)} className="text-slate-400"><X size={15} /></button></div>
-                  <p className="mt-2 text-slate-500 dark:text-slate-300">{notificationText || 'Belum ada notifikasi baru.'}</p>
-                </div>}
-              </div>
-              <button aria-label="Buka filter" data-panel-trigger onClick={() => setActivePanel(activePanel === 'filter' ? null : 'filter')} className="rounded-xl bg-white p-2.5 text-slate-600 shadow-sm dark:bg-white/10 dark:text-slate-200"><Filter size={18} /></button>
-              <button aria-label="Buka settings" data-panel-trigger onClick={() => setActivePanel(activePanel === 'settings' ? null : 'settings')} className="rounded-xl bg-white p-2.5 text-slate-600 shadow-sm dark:bg-white/10 dark:text-slate-200"><Settings size={18} /></button>
-              <button aria-label="Ubah tema" onClick={() => setDark(value => !value)} className="rounded-xl bg-white p-2.5 text-slate-600 shadow-sm dark:bg-white/10 dark:text-slate-200">{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
-            </div>
-          </header>
+          <DashboardHeader
+            subtitle="Kedelai Insight"
+            title="Dashboard Monitoring"
+            backHref="/dashboardkedelai"
+            searchValue={query}
+            onSearchChange={setQuery}
+            hasUnreadNotification={hasUnreadNotification}
+            onNotificationClick={() => { if (activePanel !== 'notice') setHasUnreadNotification(false); setActivePanel(activePanel === 'notice' ? null : 'notice') }}
+            notificationContent={activePanel === 'notice' && <div data-panel-content className="absolute right-0 top-12 z-40 w-72 rounded-2xl border border-slate-200 bg-white p-4 text-xs shadow-xl dark:border-white/10 dark:bg-[#102b20]"><div className="flex items-start justify-between gap-3"><b className="dark:text-white">Notifikasi</b><button aria-label="Tutup notifikasi" onClick={() => setActivePanel(null)} className="text-slate-400"><X size={15} /></button></div><p className="mt-2 text-slate-500 dark:text-slate-300">{notificationText || 'Belum ada notifikasi baru.'}</p></div>}
+            onFilterClick={() => setActivePanel(activePanel === 'filter' ? null : 'filter')}
+            onSettingsClick={() => setActivePanel(activePanel === 'settings' ? null : 'settings')}
+          />
 
           <section className="p-5 md:p-9">
             <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
@@ -353,6 +337,8 @@ function Select({ label, value, set, items }: { label: string; value: string; se
   const choose = (item: string) => { set(item); setOpen(false) }
   return <div className="relative"><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">{label}</span><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(current => !current)} className="mt-2 flex h-[38px] w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-semibold text-slate-700 outline-none dark:border-white/10 dark:bg-[#102b20] dark:text-white"><span className="truncate">{value}</span><ChevronDown size={14} className={`ml-2 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open && <div className="absolute left-0 top-[66px] z-50 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-[#102b20]"><div role="listbox" className="max-h-48 overflow-y-auto">{items.map(item => <button key={item} role="option" aria-selected={item === value} type="button" onClick={() => choose(item)} className={`w-full rounded-lg px-2 py-2 text-left text-xs ${item === value ? 'bg-[#e4f6eb] font-semibold text-[#087443] dark:bg-[#159a5c]/20 dark:text-[#b8efd0]' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10'}`}>{item}</button>)}</div></div>}</div>
 }
+
+
 
 
 
