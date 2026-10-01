@@ -1,8 +1,9 @@
-import { createServer } from 'node:http'
+﻿import { createServer } from 'node:http'
 import { URL } from 'node:url'
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { centroid, feature } from '@turf/turf'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 loadEnvFile(path.join(__dirname, '.env'))
@@ -13,6 +14,7 @@ const CACHE_TTL_MS = 15 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 90 * 1000
 const RANGE_CHUNK_SIZE = 5000
 const responseCache = new Map()
+const regionCoordinateCache = new Map()
 const pendingRequests = new Map()
 
 function loadEnvFile(filePath) {
@@ -260,6 +262,102 @@ async function banpemSheetHandler(url) {
     return demo(error?.name === 'AbortError' ? 'Google Sheets terlalu lama merespons; menampilkan data contoh.' : 'Google Sheets belum siap; menampilkan data contoh.')
   }
 }
+function regionCodeFromSearch(payload) {
+  const codeKeys = ['code', 'kode', 'kode_wilayah', 'kodeWilayah', 'region_code', 'regionCode', 'id']
+  const visited = new Set()
+  const visit = value => {
+    if (!value || typeof value !== 'object' || visited.has(value)) return ''
+    visited.add(value)
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const code = visit(item)
+        if (code) return code
+      }
+      return ''
+    }
+    for (const key of codeKeys) {
+      const candidate = value[key]
+      if (typeof candidate === 'string' || typeof candidate === 'number') {
+        const text = String(candidate).trim()
+        if (text) return text
+      }
+    }
+    for (const valueChild of Object.values(value)) {
+      const code = visit(valueChild)
+      if (code) return code
+    }
+    return ''
+  }
+  return visit(payload)
+}
+
+function boundaryFeature(payload) {
+  if (!payload || typeof payload !== 'object') return null
+  if (payload.type === 'FeatureCollection') return payload.features?.[0] || null
+  if (payload.type === 'Feature') return payload
+  if (payload.type === 'Polygon' || payload.type === 'MultiPolygon') return feature(payload)
+  if (payload.data) return boundaryFeature(payload.data)
+  if (payload.result) return boundaryFeature(payload.result)
+  return null
+}
+
+async function fetchRegionJson(endpoint) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(`Wilayah API error (${response.status})`)
+    return payload
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function findRegionCoordinate(name) {
+  const searchNames = [name, `Kabupaten ${name}`, `Kota ${name}`]
+  for (const searchName of searchNames) {
+    try {
+      const searchUrl = new URL('https://wilayah.smartartstudio.my.id/api/wilayah/search')
+      searchUrl.searchParams.set('q', searchName)
+      const searchPayload = await fetchRegionJson(searchUrl)
+      const code = regionCodeFromSearch(searchPayload)
+      if (!code) continue
+
+      const boundaryPayload = await fetchRegionJson(`https://wilayah.smartartstudio.my.id/api/boundaries/${encodeURIComponent(code)}`)
+      const shape = boundaryFeature(boundaryPayload)
+      if (!shape) continue
+      const center = centroid(shape).geometry.coordinates
+      if (Array.isArray(center) && Number.isFinite(center[0]) && Number.isFinite(center[1])) return { lat: center[1], lng: center[0] }
+    } catch (error) {
+      if (searchName === searchNames.at(-1)) console.warn(`Gagal mencocokkan wilayah "${name}": ${error?.message || 'Wilayah API error'}`)
+    }
+  }
+  return null
+}
+
+async function regionCoordinatesHandler(request) {
+  let body
+  try {
+    body = await readBody(request)
+  } catch {
+    return { status: 400, body: { error: 'Body JSON tidak valid.' } }
+  }
+  const names = Array.isArray(body?.names)
+    ? [...new Set(body.names.filter(name => typeof name === 'string').map(name => name.trim()).filter(Boolean))]
+    : []
+  const points = []
+  for (const name of names) {
+    if (!regionCoordinateCache.has(name)) {
+      const coordinate = await findRegionCoordinate(name)
+      regionCoordinateCache.set(name, coordinate)
+      if (!coordinate) console.warn(`Wilayah tidak ditemukan: ${name}`)
+    }
+    const coordinate = regionCoordinateCache.get(name)
+    if (coordinate) points.push({ name, ...coordinate })
+  }
+  return { status: 200, body: { points } }
+}
 function sendJson(response, status, body) {
   response.writeHead(status, {
     'Access-Control-Allow-Origin': CORS_ORIGIN,
@@ -294,6 +392,10 @@ const server = createServer(async (request, response) => {
       const result = await banpemSheetHandler(url)
       return sendJson(response, result.status, result.body)
     }
+    if (request.method === 'POST' && url.pathname === '/api/region-coordinates') {
+      const result = await regionCoordinatesHandler(request)
+      return sendJson(response, result.status, result.body)
+    }
     if (request.method === 'POST' && url.pathname === '/api/export-auth') {
       const body = await readBody(request)
       const configuredToken = process.env.EXPORT_TOKEN?.trim()
@@ -308,3 +410,4 @@ const server = createServer(async (request, response) => {
 })
 
 server.listen(PORT, () => console.log(`AKABI backend berjalan di http://localhost:${PORT}`))
+
