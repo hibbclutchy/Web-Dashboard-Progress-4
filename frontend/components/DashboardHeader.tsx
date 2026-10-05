@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowLeft, Bell, Filter, Home, Moon, Search, Settings, Sun } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useEffect, useRef } from 'react'
 import { useTheme } from './ThemeProvider'
 
 // Komponen ini WAJIB dipakai untuk header dashboard komoditas apa pun (monitoring & BANPEM). Jangan buat state tema lokal baru - selalu pakai context tema global. Set backHref ke halaman jembatan komoditas masing-masing (/{slug}), bukan ke landing.
@@ -43,13 +44,23 @@ export default function DashboardHeader({
   onSettingsClick,
 }: DashboardHeaderProps) {
   const { theme, toggleTheme } = useTheme()
+  const headerRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const header = headerRef.current
+    if (!header) return
+    const updateHeight = () => document.documentElement.style.setProperty('--dashboard-header-height', `${header.offsetHeight}px`)
+    updateHeight()
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [])
   const hasSearch = typeof searchValue === 'string' && Boolean(onSearchChange)
   const hasNotification = typeof onNotificationClick === 'function'
   const hasFilter = typeof onFilterClick === 'function'
   const hasSettings = typeof onSettingsClick === 'function'
 
   return (
-    <header className="relative flex min-h-[76px] items-center justify-between border-b border-slate-200/70 bg-white/55 px-5 backdrop-blur-xl dark:border-white/10 dark:bg-[#081f16]/60 md:px-9">
+    <header ref={headerRef} className="sticky top-0 z-40 relative flex min-h-[76px] items-center justify-between border-b border-slate-200/70 bg-white px-5 backdrop-blur-xl dark:border-white/10 dark:bg-[#081f16] md:px-9">
       <div className="flex items-center gap-3">
         <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-xl bg-white shadow-sm">
           <Image src={logoSrc} alt="Logo resmi AKABI" width={40} height={40} className="h-full w-full object-contain p-1" priority />

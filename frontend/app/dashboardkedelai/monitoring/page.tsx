@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
@@ -64,6 +64,25 @@ export default function Dashboard() {
   const [token, setToken] = useState('')
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    const body = document.body
+    const html = document.documentElement
+    const previousBodyOverflow = body.style.overflow
+    const previousBodyPaddingRight = body.style.paddingRight
+    const previousHtmlOverflow = html.style.overflow
+    if (activePanel !== null) {
+      const scrollbarWidth = window.innerWidth - html.clientWidth
+      body.style.overflow = 'hidden'
+      html.style.overflow = 'hidden'
+      if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`
+    }
+    return () => {
+      body.style.overflow = previousBodyOverflow
+      body.style.paddingRight = previousBodyPaddingRight
+      html.style.overflow = previousHtmlOverflow
+    }
+  }, [activePanel])
 
   const loadData = async () => {
     setSource('loading')
@@ -253,7 +272,7 @@ export default function Dashboard() {
               <div className="relative flex gap-2"><button onClick={loadData} disabled={source === 'loading'} className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-xs font-bold text-slate-600 shadow-sm disabled:opacity-60 dark:bg-white/10 dark:text-white"><RefreshCw size={16} className={source === 'loading' ? 'animate-spin' : ''} /> Refresh</button><button onClick={() => { setNotice(''); setDownloadOpen(true) }} className="flex items-center gap-2 rounded-xl bg-[#0b6b43] px-4 py-3 text-xs font-bold text-white shadow-lg shadow-[#0b6b43]/20"><Download size={16} /> Export Excel</button>{downloadOpen && <TokenDialog token={token} setToken={setToken} notice={notice} onClose={() => { setDownloadOpen(false); setNotice(''); setToken('') }} onExport={exportExcel} />}</div>
             </div>
             <DataStatus source={source} message={dataMessage} />
-            {activePanel === 'filter' && <div data-panel-content className="fixed right-5 top-[88px] z-30 w-[min(520px,calc(100vw-2.5rem))] glass rounded-2xl p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><b className="text-sm text-ink dark:text-white">Filter data</b><button aria-label="Tutup filter" onClick={() => setActivePanel(null)} className="text-slate-400"><X size={17} /></button></div><Filters year={year} setYear={setYear} month={month} setMonth={setMonth} province={province} setProvince={value => { setProvince(value); setCity('Semua Kabupaten') }} city={city} setCity={setCity} years={years} provinces={provinces} cities={cities} /></div>}
+            {activePanel === 'filter' && <div data-panel-content className="fixed right-5 top-[var(--dashboard-header-height)] z-30 w-[min(520px,calc(100vw-2.5rem))] glass rounded-2xl p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><b className="text-sm text-ink dark:text-white">Filter data</b><button aria-label="Tutup filter" onClick={() => setActivePanel(null)} className="text-slate-400"><X size={17} /></button></div><Filters year={year} setYear={setYear} month={month} setMonth={setMonth} province={province} setProvince={value => { setProvince(value); setCity('Semua Kabupaten') }} city={city} setCity={setCity} years={years} provinces={provinces} cities={cities} /></div>}
             <Overview data={data} year={year} filtered={filtered} totals={totals} previousTotals={previousTotals} avg={averageProductivity} previousAvg={previousAverageProductivity} totalProductivity={totalProductivity} previousProductivity={previousProductivity} trend={trend} ranked={ranked} zero={zero} province={province} query={query} setQuery={setQuery} showChanges={showChanges} />
             {activePanel === 'settings' && <div data-panel-content><SettingsPage onRefresh={loadData} source={source} onClose={() => setActivePanel(null)} /></div>}
           </section>
@@ -282,7 +301,7 @@ function SearchableSelect({ label, value, set, items, placeholder }: { label: st
   const [query, setQuery] = useState('')
   const visibleItems = items.filter(item => item === value || item.toLowerCase().includes(query.toLowerCase()))
   const choose = (item: string) => { set(item); setQuery(''); setOpen(false) }
-  return <div className="relative"><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">{label}</span><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(current => !current)} className="mt-2 flex h-[38px] w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-semibold text-slate-700 outline-none dark:border-white/10 dark:bg-[#102b20] dark:text-white"><span className="truncate">{value}</span><ChevronDown size={14} className={`ml-2 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open && <div className="absolute left-0 top-[66px] z-50 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-[#102b20]"><div className="flex items-center gap-2 border-b border-slate-100 px-2 pb-2 dark:border-white/10"><Search size={14} className="text-slate-400" /><input autoFocus aria-label={placeholder} value={query} onChange={event => setQuery(event.target.value)} className="w-full bg-transparent py-1 text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-white" placeholder={placeholder} /></div><div role="listbox" className="mt-1 max-h-48 overflow-y-auto">{visibleItems.map(item => <button key={item} role="option" aria-selected={item === value} type="button" onClick={() => choose(item)} className={`w-full rounded-lg px-2 py-2 text-left text-xs ${item === value ? 'bg-[#e4f6eb] font-semibold text-[#087443] dark:bg-[#159a5c]/20 dark:text-[#b8efd0]' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10'}`}>{item}</button>)}{!visibleItems.length && <p className="px-2 py-3 text-center text-[11px] text-slate-400">Wilayah tidak ditemukan.</p>}</div></div>}</div>
+  return <div className="relative"><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">{label}</span><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(current => !current)} className="mt-2 flex h-[38px] w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-semibold text-slate-700 outline-none dark:border-white/10 dark:bg-[#102b20] dark:text-white"><span className="truncate">{value}</span><ChevronDown size={14} className={`ml-2 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open && <div className="absolute left-0 top-[66px] z-50 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-[#102b20]"><div className="flex items-center gap-2 border-b border-slate-100 px-2 pb-2 dark:border-white/10"><Search size={14} className="text-slate-400" /><input autoFocus aria-label={placeholder} value={query} onChange={event => setQuery(event.target.value)} className="w-full bg-transparent py-1 text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-white" placeholder={placeholder} /></div><div role="listbox" className="mt-1 max-h-48 overflow-y-auto">{visibleItems.map(item => <button key={item} role="option" aria-selected={item === value} type="button" onClick={() => choose(item)} className={`w-full rounded-lg px-2 py-2 text-left text-xs ${item === value ? 'bg-[#e4f6eb] font-semibold text-[#087443] dark:bg-[#159a5c]/20 dark:text-[#b8efd0]' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10'}`}>{item}</button>)}{!visibleItems.length && <p className="px-2 py-3 text-center text-[11px] text-slate-400">Wilayah tidak ditemukan.</p>}</div></div>}</div>
 }
 function Overview({ data, year, province, filtered, totals, previousTotals, avg, previousAvg, totalProductivity, previousProductivity, trend, ranked, zero, query, setQuery, showChanges }: { data: Region[]; year: string; province: string; filtered: Region[]; totals: { planted: number; harvested: number; production: number }; previousTotals: { planted: number; harvested: number; production: number }; avg: number; previousAvg: number; totalProductivity: number; previousProductivity: number; trend: { month: string; planted: number; harvested: number }[]; ranked: Region[]; zero: Region[]; query: string; setQuery: (value: string) => void; showChanges: boolean }) {
   const kpis: [string, number, string, LucideIcon, string, number][] = [
@@ -332,7 +351,7 @@ function Empty({ text = 'Tidak ada data untuk filter yang dipilih.' }: { text?: 
 function Select({ label, value, set, items }: { label: string; value: string; set: (value: string) => void; items: string[] }) {
   const [open, setOpen] = useState(false)
   const choose = (item: string) => { set(item); setOpen(false) }
-  return <div className="relative"><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">{label}</span><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(current => !current)} className="mt-2 flex h-[38px] w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-semibold text-slate-700 outline-none dark:border-white/10 dark:bg-[#102b20] dark:text-white"><span className="truncate">{value}</span><ChevronDown size={14} className={`ml-2 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open && <div className="absolute left-0 top-[66px] z-50 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-[#102b20]"><div role="listbox" className="max-h-48 overflow-y-auto">{items.map(item => <button key={item} role="option" aria-selected={item === value} type="button" onClick={() => choose(item)} className={`w-full rounded-lg px-2 py-2 text-left text-xs ${item === value ? 'bg-[#e4f6eb] font-semibold text-[#087443] dark:bg-[#159a5c]/20 dark:text-[#b8efd0]' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10'}`}>{item}</button>)}</div></div>}</div>
+  return <div className="relative"><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">{label}</span><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(current => !current)} className="mt-2 flex h-[38px] w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-semibold text-slate-700 outline-none dark:border-white/10 dark:bg-[#102b20] dark:text-white"><span className="truncate">{value}</span><ChevronDown size={14} className={`ml-2 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open && <div className="absolute left-0 top-[66px] z-50 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-[#102b20]"><div role="listbox" className="max-h-48 overflow-y-auto">{items.map(item => <button key={item} role="option" aria-selected={item === value} type="button" onClick={() => choose(item)} className={`w-full rounded-lg px-2 py-2 text-left text-xs ${item === value ? 'bg-[#e4f6eb] font-semibold text-[#087443] dark:bg-[#159a5c]/20 dark:text-[#b8efd0]' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10'}`}>{item}</button>)}</div></div>}</div>
 }
 
 

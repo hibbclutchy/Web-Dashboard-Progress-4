@@ -23,7 +23,7 @@ export default function CommodityCards({ activeSlug }: CommodityCardsProps) {
       <div className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-52 w-52 rounded-full -translate-x-1/2 -translate-y-1/2 bg-[#6FBF44]/20 blur-3xl dark:bg-[#6FBF44]/10" aria-hidden="true" />
       <div className="pointer-events-none absolute -right-8 bottom-0 -z-10 h-44 w-44 rounded-full bg-[#7B4B94]/20 blur-3xl dark:bg-[#7B4B94]/10" aria-hidden="true" />
 
-      <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-5 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:gap-5 lg:overflow-visible">
+      <div className="flex flex-col gap-4 px-1 pb-5 pt-1 md:flex-row md:gap-5">
         {COMMODITIES.map(commodity => {
           const isActive = activeSlug === commodity.slug
           const cardStyle = {
@@ -34,7 +34,7 @@ export default function CommodityCards({ activeSlug }: CommodityCardsProps) {
           return (
             <div
               key={commodity.id}
-              className={`glass group relative flex aspect-square min-w-[13.5rem] flex-1 snap-center overflow-hidden rounded-3xl border border-white/40 text-ink backdrop-blur-xl transition-opacity duration-150 ease-out hover:opacity-95 dark:border-white/10 dark:text-white sm:min-w-[15rem] lg:min-w-0 ${isActive ? 'z-10' : ''}`}
+              className={`glass group relative flex aspect-square w-full flex-1 md:min-w-0 overflow-hidden rounded-3xl border border-white/40 text-ink backdrop-blur-xl transition-opacity duration-150 ease-out hover:opacity-95 dark:border-white/10 dark:text-white ${isActive ? 'z-10' : ''}`}
               style={cardStyle}
             >
               <Link
