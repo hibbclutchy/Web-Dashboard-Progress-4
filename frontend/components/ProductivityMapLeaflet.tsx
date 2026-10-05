@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { divIcon } from 'leaflet'
@@ -10,7 +10,7 @@ type RegionSummary = Region & { key: string; productivity: number }
 type Coordinate = { name: string; lat: number; lng: number }
 type UnmappedRegion = { name: string; code: string; reason: string }
 
-type ProductivityMapProps = { data: Region[]; year: string }
+type ProductivityMapProps = { data: Region[]; year: string; province: string }
 
 const productivityFor = (row: Pick<Region, 'harvested' | 'production'>) => row.harvested > 0 ? row.production * 10 / row.harvested : 0
 
@@ -32,10 +32,10 @@ function markerIcon(summary: RegionSummary, min: number, max: number) {
   })
 }
 
-export default function ProductivityMap({ data, year }: ProductivityMapProps) {
+export default function ProductivityMap({ data, year, province }: ProductivityMapProps) {
   const grouped = useMemo(() => {
     const groups = new Map<string, RegionSummary>()
-    data.filter(row => year === 'Semua Tahun' || row.year === year).forEach(row => {
+    data.filter(row => (year === 'Semua Tahun' || row.year === year) && (province === 'Semua Provinsi' || row.province === province)).forEach(row => {
       const key = `${row.province}::${row.city}`
       const current = groups.get(key) || { ...row, key, planted: 0, harvested: 0, production: 0, productivity: 0 }
       current.planted += row.planted
@@ -45,7 +45,7 @@ export default function ProductivityMap({ data, year }: ProductivityMapProps) {
       groups.set(key, current)
     })
     return [...groups.values()].filter(row => row.city)
-  }, [data, year])
+  }, [data, year, province])
 
   const names = useMemo(() => [...new Set(grouped.map(row => row.city))], [grouped])
   const [coordinates, setCoordinates] = useState<Coordinate[]>([])
@@ -86,7 +86,7 @@ export default function ProductivityMap({ data, year }: ProductivityMapProps) {
       if (!cancelled) { setLoading(false); setSlowLoading(false) }
     })
     return () => { cancelled = true; window.clearTimeout(slowTimer) }
-  }, [names])
+  }, [names, province])
 
   const coordinateByName = useMemo(() => new Map(coordinates.map(point => [point.name, point])), [coordinates])
   const points = useMemo(() => grouped.flatMap(summary => {
@@ -100,7 +100,7 @@ export default function ProductivityMap({ data, year }: ProductivityMapProps) {
   return <div className="glass rounded-2xl p-5">
     <div className="flex items-start justify-between gap-3">
       <div><h2 className="font-bold text-ink dark:text-white">Persebaran per Kabupaten/Kota</h2><p className="mt-1 text-xs text-slate-400">Produktivitas berdasarkan tahun yang dipilih</p></div>
-      <div className="text-right text-[10px] text-slate-400">{year}</div>
+      <div className="text-right text-[10px] text-slate-400">{year} {province}</div>
     </div>
     {loading && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">Memuat koordinat wilayah...{slowLoading && ' Memuat koordinat memakan waktu lebih lama dari biasanya...'}</p>}
     {error && <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-200">{error}</p>}
@@ -120,3 +120,4 @@ export default function ProductivityMap({ data, year }: ProductivityMapProps) {
     </div>
   </div>
 }
+

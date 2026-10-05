@@ -5,6 +5,6 @@ import type { Region } from '../lib/data'
 
 const ProductivityMapLeaflet = dynamic(() => import('./ProductivityMapLeaflet'), { ssr: false })
 
-export default function ProductivityMap(props: { data: Region[]; year: string }) {
+export default function ProductivityMap(props: { data: Region[]; year: string; province: string }) {
   return <ProductivityMapLeaflet {...props} />
 }
