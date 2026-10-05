@@ -10,8 +10,5 @@
     },
     "engines": {
         "node": ">=18"
-    },
-    "dependencies": {
-        "@turf/turf": "^7.4.0"
     }
 }

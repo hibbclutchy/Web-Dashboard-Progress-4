@@ -8,6 +8,7 @@ import { apiUrl } from '../lib/api'
 
 type RegionSummary = Region & { key: string; productivity: number }
 type Coordinate = { name: string; lat: number; lng: number }
+type UnmappedRegion = { name: string; code: string; reason: string }
 
 type ProductivityMapProps = { data: Region[]; year: string }
 
@@ -50,34 +51,41 @@ export default function ProductivityMap({ data, year }: ProductivityMapProps) {
   const [coordinates, setCoordinates] = useState<Coordinate[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [slowLoading, setSlowLoading] = useState(false)
+  const [unmapped, setUnmapped] = useState<UnmappedRegion[]>([])
 
   useEffect(() => {
     let cancelled = false
     if (!names.length) {
       setCoordinates([])
       setError('')
+      setUnmapped([])
       return () => { cancelled = true }
     }
     setLoading(true)
+    setSlowLoading(false)
     setError('')
+    setUnmapped([])
+    const slowTimer = window.setTimeout(() => { if (!cancelled) setSlowLoading(true) }, 20_000)
     fetch(apiUrl('/api/region-coordinates'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ names }),
+      body: JSON.stringify({ locations: grouped.map(row => ({ name: row.city, code: row.cityCode || '' })) }),
       cache: 'no-store',
     }).then(async response => {
-      const payload = await response.json().catch(() => ({})) as { points?: Coordinate[]; error?: string }
+      const payload = await response.json().catch(() => ({})) as { points?: Coordinate[]; unmapped?: UnmappedRegion[]; error?: string }
       if (!response.ok) throw new Error(payload.error || 'Gagal mengambil koordinat wilayah.')
-      if (!cancelled) setCoordinates(Array.isArray(payload.points) ? payload.points : [])
+      if (!cancelled) { setCoordinates(Array.isArray(payload.points) ? payload.points : []); setUnmapped(Array.isArray(payload.unmapped) ? payload.unmapped : []) }
     }).catch(fetchError => {
       if (!cancelled) {
         setCoordinates([])
         setError(fetchError instanceof Error ? fetchError.message : 'Gagal mengambil koordinat wilayah.')
       }
     }).finally(() => {
-      if (!cancelled) setLoading(false)
+      window.clearTimeout(slowTimer)
+      if (!cancelled) { setLoading(false); setSlowLoading(false) }
     })
-    return () => { cancelled = true }
+    return () => { cancelled = true; window.clearTimeout(slowTimer) }
   }, [names])
 
   const coordinateByName = useMemo(() => new Map(coordinates.map(point => [point.name, point])), [coordinates])
@@ -94,8 +102,9 @@ export default function ProductivityMap({ data, year }: ProductivityMapProps) {
       <div><h2 className="font-bold text-ink dark:text-white">Persebaran per Kabupaten/Kota</h2><p className="mt-1 text-xs text-slate-400">Produktivitas berdasarkan tahun yang dipilih</p></div>
       <div className="text-right text-[10px] text-slate-400">{year}</div>
     </div>
-    {loading && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">Memuat koordinat wilayah...</p>}
+    {loading && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">Memuat koordinat wilayah...{slowLoading && ' Memuat koordinat memakan waktu lebih lama dari biasanya...'}</p>}
     {error && <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-200">{error}</p>}
+    {!loading && !error && unmapped.length > 0 && points.length > 0 && <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">{unmapped.length} dari {names.length} wilayah belum bisa dipetakan.</p>}
     {!loading && !error && grouped.length > 0 && !points.length && <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">Belum ada titik koordinat yang cocok untuk tahun tersebut.</p>}
     {!loading && !error && !grouped.length && <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">Tidak ada data wilayah untuk tahun tersebut.</p>}
     <div className="relative mt-4 h-[380px] overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">

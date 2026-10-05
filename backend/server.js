@@ -1,6 +1,6 @@
 ﻿import { createServer } from 'node:http'
 import { URL } from 'node:url'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { centroid, feature } from '@turf/turf'
@@ -12,10 +12,40 @@ const PORT = Number(process.env.PORT || 4000)
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000'
 const CACHE_TTL_MS = 15 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 90 * 1000
+const REGION_REQUEST_DELAY_MS = 500
+const REGION_429_RETRY_DELAY_MS = 2500
+const REGION_CACHE_FILE = path.join(__dirname, 'cache', 'region-coordinates.json')
 const RANGE_CHUNK_SIZE = 5000
 const responseCache = new Map()
 const regionCoordinateCache = new Map()
 const pendingRequests = new Map()
+
+function loadRegionCoordinateCache() {
+  if (!existsSync(REGION_CACHE_FILE)) return
+  try {
+    const saved = JSON.parse(readFileSync(REGION_CACHE_FILE, 'utf8'))
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      for (const [name, coordinate] of Object.entries(saved)) {
+        if (coordinate === null || (coordinate && Number.isFinite(coordinate.lat) && Number.isFinite(coordinate.lng))) {
+          regionCoordinateCache.set(name, coordinate)
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`Cache koordinat wilayah tidak dapat dibaca: ${error?.message || 'format tidak valid'}`)
+  }
+}
+
+function saveRegionCoordinateCache() {
+  mkdirSync(path.dirname(REGION_CACHE_FILE), { recursive: true })
+  writeFileSync(REGION_CACHE_FILE, JSON.stringify(Object.fromEntries(regionCoordinateCache), null, 2))
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+loadRegionCoordinateCache()
 
 function loadEnvFile(filePath) {
   if (!existsSync(filePath)) return
@@ -262,102 +292,85 @@ async function banpemSheetHandler(url) {
     return demo(error?.name === 'AbortError' ? 'Google Sheets terlalu lama merespons; menampilkan data contoh.' : 'Google Sheets belum siap; menampilkan data contoh.')
   }
 }
-function regionCodeFromSearch(payload) {
-  const codeKeys = ['code', 'kode', 'kode_wilayah', 'kodeWilayah', 'region_code', 'regionCode', 'id']
-  const visited = new Set()
-  const visit = value => {
-    if (!value || typeof value !== 'object' || visited.has(value)) return ''
-    visited.add(value)
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const code = visit(item)
-        if (code) return code
-      }
-      return ''
-    }
-    for (const key of codeKeys) {
-      const candidate = value[key]
-      if (typeof candidate === 'string' || typeof candidate === 'number') {
-        const text = String(candidate).trim()
-        if (text) return text
-      }
-    }
-    for (const valueChild of Object.values(value)) {
-      const code = visit(valueChild)
-      if (code) return code
-    }
-    return ''
-  }
-  return visit(payload)
-}
-
-function boundaryFeature(payload) {
-  if (!payload || typeof payload !== 'object') return null
-  if (payload.type === 'FeatureCollection') return payload.features?.[0] || null
-  if (payload.type === 'Feature') return payload
-  if (payload.type === 'Polygon' || payload.type === 'MultiPolygon') return feature(payload)
-  if (payload.data) return boundaryFeature(payload.data)
-  if (payload.result) return boundaryFeature(payload.result)
-  return null
-}
-
 async function fetchRegionJson(endpoint) {
+  await sleep(REGION_REQUEST_DELAY_MS)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
     const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal })
     const payload = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(`Wilayah API error (${response.status})`)
+    if (!response.ok) {
+      const error = new Error(`Wilayah API error (${response.status})`)
+      error.status = response.status
+      error.retryAfter = response.headers.get('retry-after')
+      throw error
+    }
     return payload
   } finally {
     clearTimeout(timeout)
   }
 }
 
-async function findRegionCoordinate(name) {
-  const searchNames = [name, `Kabupaten ${name}`, `Kota ${name}`]
-  for (const searchName of searchNames) {
-    try {
-      const searchUrl = new URL('https://wilayah.smartartstudio.my.id/api/wilayah/search')
-      searchUrl.searchParams.set('q', searchName)
-      const searchPayload = await fetchRegionJson(searchUrl)
-      const code = regionCodeFromSearch(searchPayload)
-      if (!code) continue
+function retryAfterMs(value) {
+  if (!value) return REGION_429_RETRY_DELAY_MS
+  const seconds = Number(value)
+  if (Number.isFinite(seconds)) return Math.max(REGION_429_RETRY_DELAY_MS, seconds * 1000)
+  const dateMs = Date.parse(value)
+  return Number.isFinite(dateMs) ? Math.max(REGION_429_RETRY_DELAY_MS, dateMs - Date.now()) : REGION_429_RETRY_DELAY_MS
+}
 
-      const boundaryPayload = await fetchRegionJson(`https://wilayah.smartartstudio.my.id/api/boundaries/${encodeURIComponent(code)}`)
-      const shape = boundaryFeature(boundaryPayload)
-      if (!shape) continue
-      const center = centroid(shape).geometry.coordinates
-      if (Array.isArray(center) && Number.isFinite(center[0]) && Number.isFinite(center[1])) return { lat: center[1], lng: center[0] }
-    } catch (error) {
-      if (searchName === searchNames.at(-1)) console.warn(`Gagal mencocokkan wilayah "${name}": ${error?.message || 'Wilayah API error'}`)
-    }
+async function fetchRegionJsonWith429Retry(endpoint) {
+  try {
+    return await fetchRegionJson(endpoint)
+  } catch (error) {
+    if (error?.status !== 429) throw error
+    await sleep(retryAfterMs(error.retryAfter))
+    return fetchRegionJson(endpoint)
   }
-  return null
+}
+
+function normalizeRegionCode(value) {
+  const text = String(value ?? '').trim()
+  const match = text.match(/^(\d+)\.(\d+)$/)
+  return match ? match[1] + '.' + match[2].padStart(2, '0') : text
+}
+
+async function findRegionCoordinate(code) {
+  code = normalizeRegionCode(code)
+  if (!/^\d+\.\d+$/.test(code)) return null
+  try {
+    const boundaryPayload = await fetchRegionJsonWith429Retry(`https://wilayah.smartartstudio.my.id/api/boundaries/${encodeURIComponent(code)}`)
+    const lat = Number(boundaryPayload?.lat)
+    const lng = Number(boundaryPayload?.lng)
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null
+  } catch (error) {
+    console.warn(`Gagal mengambil koordinat kode wilayah "${code}": ${error?.message || 'Wilayah API error'}`)
+    return null
+  }
 }
 
 async function regionCoordinatesHandler(request) {
   let body
-  try {
-    body = await readBody(request)
-  } catch {
-    return { status: 400, body: { error: 'Body JSON tidak valid.' } }
-  }
-  const names = Array.isArray(body?.names)
-    ? [...new Set(body.names.filter(name => typeof name === 'string').map(name => name.trim()).filter(Boolean))]
-    : []
-  const points = []
-  for (const name of names) {
-    if (!regionCoordinateCache.has(name)) {
-      const coordinate = await findRegionCoordinate(name)
+  try { body = await readBody(request) } catch { return { status: 400, body: { error: 'Body JSON tidak valid.' } } }
+  const locations = Array.isArray(body?.locations)
+    ? body.locations.filter(item => item && typeof item.name === 'string').map(item => ({ name: item.name.trim(), code: item.code !== null && item.code !== undefined ? normalizeRegionCode(item.code) : '' })).filter(item => item.name)
+    : Array.isArray(body?.names) ? body.names.filter(name => typeof name === 'string').map(name => ({ name: name.trim(), code: '' })).filter(item => item.name) : []
+  const uniqueLocations = [...new Map(locations.map(item => [item.name, item])).values()]
+  const points = [], unmapped = []
+  for (const location of uniqueLocations) {
+    const { name, code } = location
+    if (!regionCoordinateCache.has(name) || regionCoordinateCache.get(name) === null) {
+      const coordinate = await findRegionCoordinate(code)
       regionCoordinateCache.set(name, coordinate)
-      if (!coordinate) console.warn(`Wilayah tidak ditemukan: ${name}`)
+      saveRegionCoordinateCache()
     }
     const coordinate = regionCoordinateCache.get(name)
     if (coordinate) points.push({ name, ...coordinate })
+    else unmapped.push({ name, code, reason: code ? 'Kode wilayah tidak valid atau koordinat tidak tersedia.' : 'Kode wilayah kosong.' })
   }
-  return { status: 200, body: { points } }
+  return { status: 200, body: { points, unmapped } }
 }
+
 function sendJson(response, status, body) {
   response.writeHead(status, {
     'Access-Control-Allow-Origin': CORS_ORIGIN,
