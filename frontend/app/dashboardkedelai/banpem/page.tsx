@@ -28,7 +28,7 @@ type BanpemRow = {
   keterangan: string
 }
 type BanpemResponse = { source?: string; message?: string; error?: string; years?: number[]; rows?: BanpemRow[]; selectedYear?: number }
-type Kpi = { label: string; value: number; unit: 'Ha' | 'Rp' | 'Kab'; icon: LucideIcon; background: string }
+type Kpi = { label: string; value: number; unit: 'Ha' | 'Rp' | 'Kab'; icon: LucideIcon; background: string; showProgress?: boolean }
 
 const pageSize = 20
 const numberFields: (keyof Omit<BanpemRow, 'tahun' | 'provinsi' | 'kabupatenKota' | 'keterangan'>)[] = ['targetHa', 'cpclKab', 'skBrmpHa', 'skKpaHa', 'skPpkHa', 'klikHa', 'klikRp', 'kontrakHa', 'nilaiKontrakRp', 'belumKontrakHa', 'spmRp', 'sp2dRp', 'salurHa', 'tanamHa']
@@ -50,9 +50,9 @@ function sumRows(rows: BanpemRow[]): Omit<BanpemRow, 'tahun' | 'provinsi' | 'kab
   }, { targetHa: 0, cpclKab: 0, skBrmpHa: 0, skKpaHa: 0, skPpkHa: 0, klikHa: 0, klikRp: 0, kontrakHa: 0, nilaiKontrakRp: 0, belumKontrakHa: 0, spmRp: 0, sp2dRp: 0, salurHa: 0, tanamHa: 0 })
 }
 
-function KpiCard({ label, value, unit, icon: Icon, background }: Kpi) {
+function KpiCard({ label, value, unit, icon: Icon, background, showProgress }: Kpi) {
   const display = unit === 'Rp' ? fmtRp(value) : fmt(value)
-  return <div className="glass rounded-2xl p-5"><div className="grid h-10 w-10 place-items-center rounded-xl" style={{ background }}><Icon size={19} className="text-[#087443]" /></div><p className="mt-5 text-xs font-semibold text-slate-500 dark:text-slate-300">{label}</p><div className="mt-1 flex items-baseline gap-1"><b className="text-2xl text-ink dark:text-white">{display}</b>{unit !== 'Rp' && <span className="text-xs text-slate-400">{unit}</span>}</div></div>
+  return <div className="glass rounded-2xl p-5"><div className="grid h-10 w-10 place-items-center rounded-xl" style={{ background }}><Icon size={19} className="text-[#087443]" /></div><p className="mt-5 text-xs font-semibold text-slate-500 dark:text-slate-300">{label}</p><div className="mt-1 flex items-baseline gap-1"><b className="text-2xl text-ink dark:text-white">{display}</b>{unit !== 'Rp' && <span className="text-xs text-slate-400">{unit}</span>}</div>{showProgress && <p className="mt-1 text-[11px] text-red-500">On Progress</p>}</div>
 }
 
 function DataStatus({ source, message }: { source: DataSource; message: string }) {
@@ -127,20 +127,20 @@ export default function KedelaiBanpemPage() {
   useEffect(() => { setCurrentPage(page => Math.min(page, totalPages)) }, [totalPages])
 
   const kpis: Kpi[] = [
+    { label: 'Kontrak', value: totals.kontrakHa, unit: 'Ha', icon: FileText, background: '#fff1dc' },
     { label: 'Target', value: totals.targetHa, unit: 'Ha', icon: Leaf, background: '#e4f6eb' },
-    { label: 'CPCL KAB', value: totals.cpclKab, unit: 'Ha', icon: CheckCircle2, background: '#e4f8ef' },
+    { label: 'Salur', value: totals.salurHa, unit: 'Ha', icon: Sprout, background: '#e4f6eb' },
+    { label: 'Tanam', value: totals.tanamHa, unit: 'Ha', icon: Leaf, background: '#e0f4e8' },
+    { label: 'CPCL KAB', value: totals.cpclKab, unit: 'Ha', icon: CheckCircle2, background: '#e4f8ef', showProgress: totals.cpclKab > 0 },
     { label: 'SK BRMP', value: totals.skBrmpHa, unit: 'Ha', icon: FileCheck2, background: '#e0f4e8' },
     { label: 'SK KPA', value: totals.skKpaHa, unit: 'Ha', icon: ShieldCheck, background: '#e8f7ee' },
     { label: 'SK PPK', value: totals.skPpkHa, unit: 'Ha', icon: CheckCircle2, background: '#e4f6eb' },
     { label: 'Klik', value: totals.klikHa, unit: 'Ha', icon: FileText, background: '#fff1dc' },
     { label: 'Klik', value: totals.klikRp, unit: 'Rp', icon: Banknote, background: '#e4f8ef' },
-    { label: 'Kontrak', value: totals.kontrakHa, unit: 'Ha', icon: FileText, background: '#fff1dc' },
     { label: 'Nilai Kontrak', value: totals.nilaiKontrakRp, unit: 'Rp', icon: WalletCards, background: '#e4f6eb' },
     { label: 'Belum Kontrak', value: totals.belumKontrakHa, unit: 'Ha', icon: ShieldCheck, background: '#fff1dc' },
     { label: 'SPM', value: totals.spmRp, unit: 'Rp', icon: FileText, background: '#e4f8ef' },
     { label: 'SP2D', value: totals.sp2dRp, unit: 'Rp', icon: Banknote, background: '#e0f4e8' },
-    { label: 'Salur', value: totals.salurHa, unit: 'Ha', icon: Sprout, background: '#e4f6eb' },
-    { label: 'Tanam', value: totals.tanamHa, unit: 'Ha', icon: Leaf, background: '#e0f4e8' },
   ]
 
   const tableHeaders = ['Provinsi', 'Kabupaten/Kota', 'Target (Ha)', 'CPCL KAB', 'SK BRMP (Ha)', 'SK KPA (Ha)', 'SK PPK (Ha)', 'Klik (Ha)', 'Klik (Rp)', 'Kontrak (Ha)', 'Nilai Kontrak (Rp)', 'Belum Kontrak (Ha)', 'SPM (Rp)', 'SP2D (Rp)', 'Salur (Ha)', 'Tanam (Ha)', 'Keterangan']
