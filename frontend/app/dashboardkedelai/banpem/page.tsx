@@ -128,7 +128,7 @@ export default function KedelaiBanpemPage() {
 
   const kpis: Kpi[] = [
     { label: 'Target', value: totals.targetHa, unit: 'Ha', icon: Leaf, background: '#e4f6eb' },
-    { label: 'CPCL KAB', value: totals.cpclKab, unit: 'Kab', icon: CheckCircle2, background: '#e4f8ef' },
+    { label: 'CPCL KAB', value: totals.cpclKab, unit: 'Ha', icon: CheckCircle2, background: '#e4f8ef' },
     { label: 'SK BRMP', value: totals.skBrmpHa, unit: 'Ha', icon: FileCheck2, background: '#e0f4e8' },
     { label: 'SK KPA', value: totals.skKpaHa, unit: 'Ha', icon: ShieldCheck, background: '#e8f7ee' },
     { label: 'SK PPK', value: totals.skPpkHa, unit: 'Ha', icon: CheckCircle2, background: '#e4f6eb' },
