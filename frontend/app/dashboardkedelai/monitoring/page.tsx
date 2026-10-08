@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  TrendingUp,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -23,7 +24,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -190,12 +191,8 @@ export default function Dashboard() {
     return currentYear ? String(currentYear - 1) : ''
   }, [data, year])
   const previousTotals = useMemo(() => sumRows(data.filter(row => row.year === previousYear && matches(row, false))), [data, previousYear, province, city, month, query])
-  const productiveRows = filtered.filter(row => row.harvested > 0 && productivity(row) > 0)
-  const averageProductivity = productiveRows.length ? productiveRows.reduce((sum, row) => sum + productivity(row), 0) / productiveRows.length : 0
   const totalProductivity = totals.harvested ? totals.production * 10 / totals.harvested : 0
   const previousProductivity = previousTotals.harvested ? previousTotals.production * 10 / previousTotals.harvested : 0
-  const previousAverageRows = data.filter(row => row.year === previousYear && matches(row, false) && row.harvested > 0)
-  const previousAverageProductivity = previousAverageRows.length ? previousAverageRows.reduce((sum, row) => sum + productivity(row), 0) / previousAverageRows.length : 0
   const trend = months.map(currentMonth => {
     const rows = filtered.filter(row => row.month === currentMonth)
     return {
@@ -204,8 +201,22 @@ export default function Dashboard() {
       harvested: rows.reduce((sum, row) => sum + row.harvested, 0),
     }
   }).filter(row => row.planted || row.harvested)
-  const ranked = [...filtered].filter(row => row.harvested > 0 && productivity(row) > 0).sort((a, b) => productivity(b) - productivity(a))
-  const zero = filtered.filter(row => row.planted > 0 && row.harvested === 0)
+  const nationalRows = useMemo(() => aggregateRegions(data.filter(row => year === 'Semua Tahun' || row.year === year), year), [data, year])
+  const nationalProductiveRows = nationalRows.filter(row => row.harvested > 0)
+  const nationalAverageProductivity = nationalProductiveRows.length
+    ? nationalProductiveRows.reduce((sum, row) => sum + productivity(row), 0) / nationalProductiveRows.length
+    : 0
+  const displayRows = province === 'Semua Provinsi'
+    ? nationalRows
+    : nationalRows.filter(row => row.province === province)
+  const productionCenters = displayRows
+    .filter(row => productivity(row) > nationalAverageProductivity)
+    .sort((a, b) => productivity(b) - productivity(a))
+    .slice(0, 5)
+  const belowAverageRegions = displayRows
+    .filter(row => productivity(row) > 0 && productivity(row) < nationalAverageProductivity)
+    .sort((a, b) => productivity(a) - productivity(b))
+    .slice(0, 5)
   const showChanges = year !== 'Semua Tahun'
 
   const exportExcel = async () => {
@@ -273,7 +284,7 @@ export default function Dashboard() {
             </div>
             <DataStatus source={source} message={dataMessage} />
             {activePanel === 'filter' && <div data-panel-content className="fixed right-5 top-[var(--dashboard-header-height)] z-30 w-[min(520px,calc(100vw-2.5rem))] glass rounded-2xl p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><b className="text-sm text-ink dark:text-white">Filter data</b><button aria-label="Tutup filter" onClick={() => setActivePanel(null)} className="text-slate-400"><X size={17} /></button></div><Filters year={year} setYear={setYear} month={month} setMonth={setMonth} province={province} setProvince={value => { setProvince(value); setCity('Semua Kabupaten') }} city={city} setCity={setCity} years={years} provinces={provinces} cities={cities} /></div>}
-            <Overview data={data} year={year} filtered={filtered} totals={totals} previousTotals={previousTotals} avg={averageProductivity} previousAvg={previousAverageProductivity} totalProductivity={totalProductivity} previousProductivity={previousProductivity} trend={trend} ranked={ranked} zero={zero} province={province} query={query} setQuery={setQuery} showChanges={showChanges} />
+            <Overview data={data} year={year} filtered={filtered} totals={totals} previousTotals={previousTotals} totalProductivity={totalProductivity} previousProductivity={previousProductivity} trend={trend} productionCenters={productionCenters} belowAverageRegions={belowAverageRegions} nationalAverage={nationalAverageProductivity} province={province} query={query} setQuery={setQuery} showChanges={showChanges} />
             {activePanel === 'settings' && <div data-panel-content><SettingsPage onRefresh={loadData} source={source} onClose={() => setActivePanel(null)} /></div>}
           </section>
         </main>
@@ -284,6 +295,22 @@ export default function Dashboard() {
 
 function sumRows(rows: Region[]) {
   return rows.reduce((sum, row) => ({ planted: sum.planted + row.planted, harvested: sum.harvested + row.harvested, production: sum.production + row.production }), { planted: 0, harvested: 0, production: 0 })
+}
+
+function aggregateRegions(rows: Region[], year: string) {
+  const aggregated = new Map<string, Region>()
+  rows.forEach(row => {
+    const key = `${row.province}\u0000${row.city}`
+    const current = aggregated.get(key)
+    if (current) {
+      current.planted += row.planted
+      current.harvested += row.harvested
+      current.production += row.production
+    } else {
+      aggregated.set(key, { ...row, month: 'Semua Bulan', year })
+    }
+  })
+  return Array.from(aggregated.values())
 }
 
 function DataStatus({ source, message }: { source: DataSource; message: string }) {
@@ -303,14 +330,14 @@ function SearchableSelect({ label, value, set, items, placeholder }: { label: st
   const choose = (item: string) => { set(item); setQuery(''); setOpen(false) }
   return <div className="relative"><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">{label}</span><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(current => !current)} className="mt-2 flex h-[38px] w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-semibold text-slate-700 outline-none dark:border-white/10 dark:bg-[#102b20] dark:text-white"><span className="truncate">{value}</span><ChevronDown size={14} className={`ml-2 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open && <div className="absolute left-0 top-[66px] z-50 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-[#102b20]"><div className="flex items-center gap-2 border-b border-slate-100 px-2 pb-2 dark:border-white/10"><Search size={14} className="text-slate-400" /><input autoFocus aria-label={placeholder} value={query} onChange={event => setQuery(event.target.value)} className="w-full bg-transparent py-1 text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-white" placeholder={placeholder} /></div><div role="listbox" className="mt-1 max-h-48 overflow-y-auto">{visibleItems.map(item => <button key={item} role="option" aria-selected={item === value} type="button" onClick={() => choose(item)} className={`w-full rounded-lg px-2 py-2 text-left text-xs ${item === value ? 'bg-[#e4f6eb] font-semibold text-[#087443] dark:bg-[#159a5c]/20 dark:text-[#b8efd0]' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10'}`}>{item}</button>)}{!visibleItems.length && <p className="px-2 py-3 text-center text-[11px] text-slate-400">Wilayah tidak ditemukan.</p>}</div></div>}</div>
 }
-function Overview({ data, year, province, filtered, totals, previousTotals, avg, previousAvg, totalProductivity, previousProductivity, trend, ranked, zero, query, setQuery, showChanges }: { data: Region[]; year: string; province: string; filtered: Region[]; totals: { planted: number; harvested: number; production: number }; previousTotals: { planted: number; harvested: number; production: number }; avg: number; previousAvg: number; totalProductivity: number; previousProductivity: number; trend: { month: string; planted: number; harvested: number }[]; ranked: Region[]; zero: Region[]; query: string; setQuery: (value: string) => void; showChanges: boolean }) {
+function Overview({ data, year, province, filtered, totals, previousTotals, totalProductivity, previousProductivity, trend, productionCenters, belowAverageRegions, nationalAverage, query, setQuery, showChanges }: { data: Region[]; year: string; province: string; filtered: Region[]; totals: { planted: number; harvested: number; production: number }; previousTotals: { planted: number; harvested: number; production: number }; totalProductivity: number; previousProductivity: number; trend: { month: string; planted: number; harvested: number }[]; productionCenters: Region[]; belowAverageRegions: Region[]; nationalAverage: number; query: string; setQuery: (value: string) => void; showChanges: boolean }) {
   const kpis: [string, number, string, LucideIcon, string, number][] = [
     ['Total Luas Tanam', totals.planted, 'Ha', Leaf, '#e4f6eb', previousTotals.planted],
     ['Total Luas Panen', totals.harvested, 'Ha', CheckCircle2, '#e4f8ef', previousTotals.harvested],
     ['Total Produksi', totals.production, 'Ton', Activity, '#fff1dc', previousTotals.production],
     ['Produktivitas Keseluruhan', totalProductivity, 'Kuintal/Ha', Activity, '#e0f4e8', previousProductivity],
   ]
-  return <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{kpis.map(([label, value, unit, Icon, background, previous]) => <div className="glass rounded-2xl p-5" key={label}><div className="grid h-10 w-10 place-items-center rounded-xl" style={{ background }}><Icon size={19} className="text-[#087443]" /></div><p className="mt-5 text-xs font-semibold text-slate-500 dark:text-slate-300">{label}</p><div className="mt-1 flex items-baseline gap-1"><b className="text-2xl text-ink dark:text-white">{value.toFixed(2).replace(/\.00$/, '') === '0' ? '0' : unit === 'Ha' || unit === 'Ton' ? money(value) : value.toFixed(2)}</b><span className="text-xs text-slate-400">{unit}</span></div>{showChanges && <Change current={value} previous={previous} />}</div>)}</div><div className="mt-6 grid gap-6 xl:grid-cols-[1.55fr_1fr]"><div className="glass rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Tren Luas Tanam & Panen</h2><p className="mt-1 text-xs text-slate-400">Performa bulanan sesuai filter aktif</p><div className="mt-5 h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={trend} barGap={8}><CartesianGrid vertical={false} stroke="#e9edf4" /><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9aa4b5' }} /><YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9aa4b5' }} /><Tooltip contentStyle={{ border: '1px solid rgba(148,163,184,.2)', borderRadius: 12 }} formatter={(value) => typeof value === 'number' ? value.toFixed(2) : value} /><Bar dataKey="planted" name="Luas Tanam (Ha)" fill="#159a5c" radius={[5, 5, 0, 0]} /><Bar dataKey="harvested" name="Luas Panen (Ha)" fill="#f4a261" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></div><div className="glass rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Top Wilayah</h2><p className="mt-1 text-xs text-slate-400">Produktivitas tertinggi</p><div className="mt-5 h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={ranked.slice(0, 6).map(row => ({ city: row.city, value: Number(productivity(row).toFixed(1)) }))} layout="vertical" margin={{ left: 5, right: 12 }}><XAxis type="number" hide /><YAxis type="category" dataKey="city" width={105} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#718096' }} /><Bar dataKey="value" radius={[0, 5, 5, 0]} barSize={14}>{ranked.slice(0, 6).map((_, index) => <Cell key={index} fill={index === 0 ? '#159a5c' : '#82d3a4'} />)}</Bar><Tooltip /></BarChart></ResponsiveContainer></div></div></div><div className="mt-6 grid grid-cols-2 items-stretch gap-3 md:gap-6"><div className="glass flex min-h-[390px] flex-col rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Early Warning System</h2><p className="mt-1 text-xs text-slate-400">Wilayah dengan produktivitas terendah</p><div className="mt-4 space-y-3">{ranked.slice(-5).reverse().map(row => <RegionLine key={`${row.city}-${row.month}`} row={row} />)}{!ranked.length && <Empty />}</div></div><div className="glass flex min-h-[390px] flex-col rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Zero Report</h2><p className="mt-1 text-xs text-slate-400">Wilayah belum melaporkan panen</p><div className="mt-4 space-y-3">{zero.slice(0, 5).map(row => <RegionLine key={`${row.city}-${row.month}`} row={row} zero />)}{!zero.length && <Empty text="Tidak ada zero report pada filter ini." />}</div></div></div><div className="mt-6"><ProductivityMap data={data} year={year} province={province} /></div><DataTable rows={filtered} query={query} setQuery={setQuery} /></>
+  return <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{kpis.map(([label, value, unit, Icon, background, previous]) => <div className="glass rounded-2xl p-5" key={label}><div className="grid h-10 w-10 place-items-center rounded-xl" style={{ background }}><Icon size={19} className="text-[#087443]" /></div><p className="mt-5 text-xs font-semibold text-slate-500 dark:text-slate-300">{label}</p><div className="mt-1 flex items-baseline gap-1"><b className="text-2xl text-ink dark:text-white">{value.toFixed(2).replace(/\.00$/, '') === '0' ? '0' : unit === 'Ha' || unit === 'Ton' ? money(value) : value.toFixed(2)}</b><span className="text-xs text-slate-400">{unit}</span></div>{showChanges && <Change current={value} previous={previous} />}</div>)}</div><div className="mt-6 grid grid-cols-1 gap-6"><div className="glass rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Tren Luas Tanam & Panen</h2><p className="mt-1 text-xs text-slate-400">Performa bulanan sesuai filter aktif</p><div className="mt-5 h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={trend} barGap={8}><CartesianGrid vertical={false} stroke="#e9edf4" /><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9aa4b5' }} /><YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9aa4b5' }} /><Tooltip contentStyle={{ border: '1px solid rgba(148,163,184,.2)', borderRadius: 12 }} formatter={(value) => typeof value === 'number' ? value.toFixed(2) : value} /><Bar dataKey="planted" name="Luas Tanam (Ha)" fill="#159a5c" radius={[5, 5, 0, 0]}><LabelList dataKey="planted" position="top" formatter={(value: unknown) => money(Number(value))} fill="#087443" fontSize={10} /></Bar><Bar dataKey="harvested" name="Luas Panen (Ha)" fill="#f4a261" radius={[5, 5, 0, 0]}><LabelList dataKey="harvested" position="top" formatter={(value: unknown) => money(Number(value))} fill="#9a5c1d" fontSize={10} /></Bar></BarChart></ResponsiveContainer></div></div></div><div className="mt-6 grid grid-cols-2 items-stretch gap-3 md:gap-6"><div className="glass flex min-h-[390px] flex-col rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Sentra Produksi</h2><p className="mt-1 text-xs text-slate-400">5 wilayah dengan produktivitas tertinggi di atas rata-rata nasional ({nationalAverage.toFixed(2)} Ku/Ha)</p><div className="mt-4 space-y-3">{productionCenters.map(row => <RegionLine key={`${row.province}-${row.city}`} row={row} positive />)}{!productionCenters.length && <Empty text="Belum ada wilayah di atas rata-rata nasional." />}</div></div><div className="glass flex min-h-[390px] flex-col rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Wilayah Perlu Perhatian</h2><p className="mt-1 text-xs text-slate-400">5 wilayah dengan produktivitas di bawah rata-rata nasional</p><div className="mt-4 space-y-3">{belowAverageRegions.map(row => <RegionLine key={`${row.province}-${row.city}`} row={row} />)}{!belowAverageRegions.length && <Empty text="Tidak ada wilayah di bawah rata-rata nasional." />}</div></div></div><div className="mt-6"><ProductivityMap data={data} year={year} province={province} /></div><DataTable rows={filtered} query={query} setQuery={setQuery} /></>
 }
 
 function Change({ current, previous }: { current: number; previous: number }) {
@@ -340,8 +367,8 @@ function TokenDialog({ token, setToken, notice, onClose, onExport }: { token: st
   return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={onClose}><div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-[#102b20]" onMouseDown={event => event.stopPropagation()}><div className="flex items-start justify-between"><div><h2 className="font-bold dark:text-white">Secure Excel export</h2><p className="mt-1 text-xs text-slate-400">Masukkan token untuk mengunduh database Excel sesuai filter.</p></div><button aria-label="Tutup dialog" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} /></button></div><input autoFocus value={token} onChange={event => setToken(event.target.value)} onKeyDown={event => event.key === 'Enter' && onExport()} placeholder="Masukkan token akses" className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs outline-none dark:border-white/10 dark:bg-white/5 dark:text-white" /><div className="mt-4 flex justify-end gap-2"><button onClick={onClose} className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10">Batal</button><button onClick={onExport} className="rounded-xl bg-[#0b7a4b] px-4 py-2.5 text-xs font-bold text-white">Download Excel</button></div>{notice && <p className="mt-3 text-xs text-red-500">{notice}</p>}</div></div>
 }
 
-function RegionLine({ row, zero }: { row: Region; zero?: boolean }) {
-  return <div className="flex items-center gap-3"><div className={`grid h-8 w-8 place-items-center rounded-full text-[10px] font-bold ${zero ? 'bg-amber-50 text-amber-500 dark:bg-amber-500/10' : 'bg-red-50 text-red-500 dark:bg-red-500/10'}`}>{zero ? 'ZR' : <AlertTriangle size={14} />}</div><div className="flex-1"><b className="block text-xs text-slate-700 dark:text-white">{row.city}</b><span className="text-[10px] text-slate-400">{row.province}  {row.month} {row.year}</span></div><b className={`text-xs ${zero ? 'text-amber-500' : 'text-red-500'}`}>{zero ? 'Perlu follow up' : `${productivity(row).toFixed(2)} Ku/Ha`}</b></div>
+function RegionLine({ row, positive = false }: { row: Region; positive?: boolean }) {
+  return <div className="flex items-center gap-3"><div className={`grid h-8 w-8 place-items-center rounded-full text-[10px] font-bold ${positive ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10' : 'bg-amber-50 text-amber-500 dark:bg-amber-500/10'}`}>{positive ? <TrendingUp size={14} /> : <AlertTriangle size={14} />}</div><div className="flex-1"><b className="block text-xs text-slate-700 dark:text-white">{row.city}</b><span className="text-[10px] text-slate-400">{row.province}  Akumulasi {row.year}</span>{positive && <span className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">Sentra Produksi</span>}</div><b className={`text-xs ${positive ? 'text-emerald-600' : 'text-amber-500'}`}>{productivity(row).toFixed(2)} Ku/Ha</b></div>
 }
 
 function Empty({ text = 'Tidak ada data untuk filter yang dipilih.' }: { text?: string }) {
@@ -353,6 +380,7 @@ function Select({ label, value, set, items }: { label: string; value: string; se
   const choose = (item: string) => { set(item); setOpen(false) }
   return <div className="relative"><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">{label}</span><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(current => !current)} className="mt-2 flex h-[38px] w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-semibold text-slate-700 outline-none dark:border-white/10 dark:bg-[#102b20] dark:text-white"><span className="truncate">{value}</span><ChevronDown size={14} className={`ml-2 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open && <div className="absolute left-0 top-[66px] z-50 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-[#102b20]"><div role="listbox" className="max-h-48 overflow-y-auto">{items.map(item => <button key={item} role="option" aria-selected={item === value} type="button" onClick={() => choose(item)} className={`w-full rounded-lg px-2 py-2 text-left text-xs ${item === value ? 'bg-[#e4f6eb] font-semibold text-[#087443] dark:bg-[#159a5c]/20 dark:text-[#b8efd0]' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10'}`}>{item}</button>)}</div></div>}</div>
 }
+
 
 
 
