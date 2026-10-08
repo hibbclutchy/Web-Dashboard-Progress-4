@@ -1,4 +1,4 @@
-import SummaryPlaceholder from '../../components/SummaryPlaceholder'
+import DashboardModeSelection from '../../../components/DashboardModeSelection'
 import { notFound } from 'next/navigation'
 
 const COMMODITIES: Record<string, string> = {
@@ -8,8 +8,9 @@ const COMMODITIES: Record<string, string> = {
   dashboardubijalar: 'Ubi Jalar',
 }
 
-export default function CommoditySummary({ params }: { params: { slug: string } }) {
+export default function DashboardSelection({ params }: { params: { slug: string } }) {
   const commodity = COMMODITIES[params.slug]
   if (!commodity) notFound()
-  return <SummaryPlaceholder commodity={commodity} chooseHref={`/${params.slug}/pilih`} />
+
+  return <DashboardModeSelection commodity={commodity} basePath={`/${params.slug}`} />
 }

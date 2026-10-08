@@ -1,5 +1,5 @@
-import Link from 'next/link'
-import { Activity, HandCoins } from 'lucide-react'
+﻿import Link from 'next/link'
+import { Activity, HandCoins, Scale } from 'lucide-react'
 import type { CSSProperties } from 'react'
 
 type DashboardModeSelectionProps = {
@@ -29,6 +29,12 @@ const modes: Mode[] = [
     label: 'Buka Dashboard',
     href: 'banpem',
     Icon: HandCoins,
+  },  {
+    title: 'Neraca Pangan',
+    description: 'Lihat ketersediaan, kebutuhan, dan neraca pangan komoditas ini.',
+    label: 'Buka Dashboard',
+    href: 'neraca',
+    Icon: Scale,
   },
 ]
 
@@ -53,8 +59,8 @@ export default function DashboardModeSelection({ commodity, basePath }: Dashboar
   return (
     <main className="min-h-screen bg-canvas px-5 py-8 text-ink transition-colors duration-500 dark:bg-navy dark:text-white sm:px-8">
       <Link
-        href="/"
-        aria-label="Kembali ke halaman utama AKABI"
+        href={basePath}
+        aria-label={`Kembali ke ringkasan ${commodity}`}
         className="glass fixed left-5 top-5 z-10 inline-flex items-center gap-2 rounded-2xl bg-white/10 px-3 py-2 text-xs font-bold text-ink/80 backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-soft dark:bg-white/5 dark:text-white/90 sm:left-8"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -74,7 +80,7 @@ export default function DashboardModeSelection({ commodity, basePath }: Dashboar
           </p>
         </div>
 
-        <div className="mt-12 grid w-full gap-6 md:grid-cols-2">
+        <div className="mt-12 grid w-full gap-6 md:grid-cols-2 xl:grid-cols-3">
           {modes.map(({ title, description, label, href, Icon }) => (
             <Link
               key={href}
@@ -102,3 +108,5 @@ export default function DashboardModeSelection({ commodity, basePath }: Dashboar
     </main>
   )
 }
+
+

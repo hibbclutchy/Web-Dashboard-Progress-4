@@ -8,15 +8,20 @@ const COMMODITIES: Record<string, string> = {
   dashboardubijalar: 'Ubi Jalar',
 }
 
-const MODES: Record<string, string> = {
+type DashboardMode = 'monitoring' | 'banpem' | 'neraca'
+
+const MODES: Record<DashboardMode, string> = {
   monitoring: 'Monitoring Produktivitas',
   banpem: 'BANPEM (Bantuan Pemerintah)',
+  neraca: 'Neraca Pangan',
 }
 
 export default function DashboardModePage({ params }: { params: { slug: string; mode: string } }) {
   const commodity = COMMODITIES[params.slug]
-  const mode = MODES[params.mode]
+  const mode = MODES[params.mode as DashboardMode]
   if (!commodity || !mode) notFound()
 
-  return <DashboardComingSoon commodity={commodity} mode={mode} backHref={`/${params.slug}`} />
+  return <DashboardComingSoon commodity={commodity} mode={mode} backHref={`/${params.slug}/pilih`} />
 }
+
+

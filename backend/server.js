@@ -1,4 +1,4 @@
-﻿import { createServer } from 'node:http'
+import { createServer } from 'node:http'
 import { URL } from 'node:url'
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -292,6 +292,127 @@ async function banpemSheetHandler(url) {
     return demo(error?.name === 'AbortError' ? 'Google Sheets terlalu lama merespons; menampilkan data contoh.' : 'Google Sheets belum siap; menampilkan data contoh.')
   }
 }
+const neracaDemoRows = [
+  { tahun: 2026, bulan: 'Jan', stokAwal: 12500, produksi: 4200, tercecer: 120, produksiBersih: 4080, impor: 1800, ekspor: 300, totalKetersediaan: 28080, rumahTangga: 11200, benih: 1800, industriHoreka: 5200, industriPakan: 3100, totalKebutuhan: 21300, neracaTon: 6780 },
+  { tahun: 2026, bulan: 'Feb', stokAwal: 12800, produksi: 4450, tercecer: 110, produksiBersih: 4340, impor: 1650, ekspor: 280, totalKetersediaan: 28510, rumahTangga: 11400, benih: 1850, industriHoreka: 5350, industriPakan: 3200, totalKebutuhan: 21800, neracaTon: 6710 },
+  { tahun: 2025, bulan: 'Dec', stokAwal: 11900, produksi: 3980, tercecer: 130, produksiBersih: 3850, impor: 1900, ekspor: 320, totalKetersediaan: 27330, rumahTangga: 10900, benih: 1750, industriHoreka: 5000, industriPakan: 3000, totalKebutuhan: 20650, neracaTon: 6680 },
+]
+
+const neracaNumericFields = ['stokAwal', 'produksi', 'tercecer', 'produksiBersih', 'impor', 'ekspor', 'totalKetersediaan', 'rumahTangga', 'benih', 'industriHoreka', 'industriPakan', 'totalKebutuhan', 'neracaTon']
+const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const monthAliases = { januari: 'Jan', jan: 'Jan', februari: 'Feb', feb: 'Feb', maret: 'Mar', mar: 'Mar', april: 'Apr', apr: 'Apr', mei: 'May', may: 'May', juni: 'Jun', jun: 'Jun', juli: 'Jul', jul: 'Jul', agustus: 'Aug', agu: 'Aug', agt: 'Aug', aug: 'Aug', september: 'Sep', sep: 'Sep', oktober: 'Oct', okt: 'Oct', oct: 'Oct', november: 'Nov', nov: 'Nov', desember: 'Dec', des: 'Dec', dec: 'Dec' }
+
+function normalizeMonth(value) {
+  const text = String(value ?? '').trim().toLowerCase().replace(/[.\s]/g, '')
+  if (/^\d{1,2}$/.test(text)) return monthNames[Math.max(0, Math.min(11, Number(text) - 1))] || ''
+  return monthAliases[text] || monthAliases[text.slice(0, 3)] || String(value ?? '').trim()
+}
+
+function monthIndex(value) {
+  return monthNames.indexOf(normalizeMonth(value))
+}
+
+function neracaHeaderMap(headers) {
+  return {
+    tahun: findHeaderIndex(headers, ['Tahun']),
+    bulan: findHeaderIndex(headers, ['Bulan']),
+    stokAwal: findHeaderIndex(headers, ['KET. Stok Awal', 'KET Stok Awal', 'Stok Awal']),
+    produksi: findHeaderIndex(headers, ['KET. Produksi', 'KET Produksi']),
+    tercecer: findHeaderIndex(headers, ['KET. Tercecer', 'KET Tercecer']),
+    produksiBersih: findHeaderIndex(headers, ['KET. Produksi Bersih', 'KET Produksi Bersih']),
+    impor: findHeaderIndex(headers, ['KET. Impor', 'KET Impor']),
+    ekspor: findHeaderIndex(headers, ['KET. Ekspor', 'KET Ekspor']),
+    totalKetersediaan: findHeaderIndex(headers, ['Total Ketersediaan']),
+    rumahTangga: findHeaderIndex(headers, ['KEB. Rumah Tangga', 'KEB Rumah Tangga']),
+    benih: findHeaderIndex(headers, ['KEB. Benih', 'KEB Benih']),
+    industriHoreka: findHeaderIndex(headers, ['KEB. Industri dan horeka', 'KEB Industri dan Horeka', 'Industri dan Horeka']),
+    industriPakan: findHeaderIndex(headers, ['KEB. Industri Pakan', 'KEB Industri Pakan']),
+    totalKebutuhan: findHeaderIndex(headers, ['Total Kebutuhan']),
+    neracaTon: findHeaderIndex(headers, ['Neraca (Ton)', 'Neraca Ton', 'Neraca']),
+  }
+}
+
+function parseNeracaValues(values) {
+  const headers = Array.isArray(values[0]) ? values[0] : []
+  const map = neracaHeaderMap(headers)
+  if (map.tahun < 0 || map.bulan < 0) return []
+  return values.slice(1).map(row => ({
+    tahun: numeric(valueAt(row, map.tahun)),
+    bulan: normalizeMonth(valueAt(row, map.bulan)),
+    stokAwal: numeric(valueAt(row, map.stokAwal)),
+    produksi: numeric(valueAt(row, map.produksi)),
+    tercecer: numeric(valueAt(row, map.tercecer)),
+    produksiBersih: numeric(valueAt(row, map.produksiBersih)),
+    impor: numeric(valueAt(row, map.impor)),
+    ekspor: numeric(valueAt(row, map.ekspor)),
+    totalKetersediaan: numeric(valueAt(row, map.totalKetersediaan)),
+    rumahTangga: numeric(valueAt(row, map.rumahTangga)),
+    benih: numeric(valueAt(row, map.benih)),
+    industriHoreka: numeric(valueAt(row, map.industriHoreka)),
+    industriPakan: numeric(valueAt(row, map.industriPakan)),
+    totalKebutuhan: numeric(valueAt(row, map.totalKebutuhan)),
+    neracaTon: numeric(valueAt(row, map.neracaTon)),
+  })).filter(row => row.tahun && row.bulan)
+}
+
+function hasNeracaData(row) {
+  return neracaNumericFields.some(field => Math.abs(row[field]) > 0)
+}
+
+function neracaYears(rows) {
+  return [...new Set(rows.map(row => row.tahun).filter(Boolean))].sort((a, b) => a - b)
+}
+
+function defaultNeracaYear(rows) {
+  const yearsWithData = neracaYears(rows).filter(year => rows.some(row => row.tahun === year && hasNeracaData(row)))
+  return yearsWithData.at(-1) || neracaYears(rows).at(-1) || 2026
+}
+
+function defaultNeracaMonth(rows, year) {
+  const months = rows.filter(row => row.tahun === year && hasNeracaData(row)).map(row => row.bulan).sort((a, b) => monthIndex(a) - monthIndex(b))
+  return months.at(-1) || ''
+}
+
+function neracaBody(source, rows, options, range) {
+  const years = neracaYears(rows)
+  const requestedYear = Number(options?.year)
+  const selectedYear = Number.isFinite(requestedYear) && requestedYear > 0 ? requestedYear : defaultNeracaYear(rows)
+  const requestedMonth = options?.month ? normalizeMonth(options.month) : ''
+  const normalizedRequestedMonth = normalizeMonth(requestedMonth)
+  const allMonthsRequested = ['semua bulan', 'all', ''].includes(String(requestedMonth || '').trim().toLowerCase())
+  const selectedMonth = requestedMonth && !allMonthsRequested ? normalizedRequestedMonth : (allMonthsRequested && requestedMonth ? '' : defaultNeracaMonth(rows, selectedYear))
+  const filteredRows = rows.filter(row => row.tahun === selectedYear && (!selectedMonth || row.bulan === selectedMonth))
+  const months = [...new Set(rows.filter(row => row.tahun === selectedYear && hasNeracaData(row)).map(row => row.bulan))].sort((a, b) => monthIndex(a) - monthIndex(b))
+  return { source, years, months, rows: filteredRows, selectedYear, selectedMonth, range, ...(options?.text ? { message: options.text } : {}) }
+}
+
+async function neracaHandler(url) {
+  const range = url.searchParams.get('range') || process.env.GOOGLE_SHEETS_NERACA_RANGE?.trim() || ''
+  const forceRefresh = url.searchParams.get('refresh') === '1'
+  const key = process.env.GOOGLE_SHEETS_API_KEY?.trim()
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim()
+  const requestedYear = Number(url.searchParams.get('year'))
+  const requestedMonth = url.searchParams.get('month') || ''
+  const requestOptions = { year: Number.isFinite(requestedYear) ? requestedYear : undefined, month: requestedMonth || undefined }
+  const demo = message => ({ status: 200, body: neracaBody('demo', neracaDemoRows, { ...requestOptions, text: message }, range) })
+
+  if (!range || !key || !spreadsheetId || key.startsWith('your_') || spreadsheetId.startsWith('your_')) {
+    return demo(!range ? 'Google Sheets Neraca range belum dikonfigurasi.' : 'Google Sheets credentials are not configured.')
+  }
+
+  const cacheKey = `${spreadsheetId}:neraca:${range}`
+  try {
+    const values = await fetchSheetValues(spreadsheetId, range, key, cacheKey, forceRefresh)
+    const rows = parseNeracaValues(values)
+    if (!rows.length) return demo('Data Neraca belum tersedia; menampilkan data contoh.')
+    return { status: 200, body: neracaBody('sheet', rows, requestOptions, range) }
+  } catch (error) {
+    const cached = responseCache.get(cacheKey)
+    const cachedRows = cached ? parseNeracaValues(cached.values) : []
+    if (cachedRows.length) return { status: 200, body: neracaBody('sheet', cachedRows, { ...requestOptions, text: 'Menggunakan cache terakhir karena koneksi sedang bermasalah.' }, range) }
+    return demo(error?.name === 'AbortError' ? 'Google Sheets terlalu lama merespons; menampilkan data contoh.' : 'Google Sheets belum siap; menampilkan data contoh.')
+  }
+}
 async function fetchRegionJson(endpoint) {
   await sleep(REGION_REQUEST_DELAY_MS)
   const controller = new AbortController()
@@ -405,6 +526,10 @@ const server = createServer(async (request, response) => {
       const result = await banpemSheetHandler(url)
       return sendJson(response, result.status, result.body)
     }
+    if (request.method === 'GET' && url.pathname === '/api/neraca-sheet') {
+      const result = await neracaHandler(url)
+      return sendJson(response, result.status, result.body)
+    }
     if (request.method === 'POST' && url.pathname === '/api/region-coordinates') {
       const result = await regionCoordinatesHandler(request)
       return sendJson(response, result.status, result.body)
@@ -423,4 +548,10 @@ const server = createServer(async (request, response) => {
 })
 
 server.listen(PORT, () => console.log(`AKABI backend berjalan di http://localhost:${PORT}`))
+
+
+
+
+
+
 
