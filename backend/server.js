@@ -364,13 +364,7 @@ function neracaYears(rows) {
 }
 
 function defaultNeracaYear(rows) {
-  const yearsWithData = neracaYears(rows).filter(year => rows.some(row => row.tahun === year && hasNeracaData(row)))
-  return yearsWithData.at(-1) || neracaYears(rows).at(-1) || 2026
-}
-
-function defaultNeracaMonth(rows, year) {
-  const months = rows.filter(row => row.tahun === year && hasNeracaData(row)).map(row => row.bulan).sort((a, b) => monthIndex(a) - monthIndex(b))
-  return months.at(-1) || ''
+  return new Date().getFullYear()
 }
 
 function neracaBody(source, rows, options, range) {
@@ -380,9 +374,9 @@ function neracaBody(source, rows, options, range) {
   const requestedMonth = options?.month ? normalizeMonth(options.month) : ''
   const normalizedRequestedMonth = normalizeMonth(requestedMonth)
   const allMonthsRequested = ['semua bulan', 'all', ''].includes(String(requestedMonth || '').trim().toLowerCase())
-  const selectedMonth = requestedMonth && !allMonthsRequested ? normalizedRequestedMonth : (allMonthsRequested && requestedMonth ? '' : defaultNeracaMonth(rows, selectedYear))
+  const selectedMonth = requestedMonth && !allMonthsRequested ? normalizedRequestedMonth : ''
   const filteredRows = rows.filter(row => row.tahun === selectedYear && (!selectedMonth || row.bulan === selectedMonth))
-  const months = [...new Set(rows.filter(row => row.tahun === selectedYear && hasNeracaData(row)).map(row => row.bulan))].sort((a, b) => monthIndex(a) - monthIndex(b))
+  const months = [...monthNames]
   return { source, years, months, rows: filteredRows, selectedYear, selectedMonth, range, ...(options?.text ? { message: options.text } : {}) }
 }
 
