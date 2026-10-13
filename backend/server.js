@@ -193,6 +193,7 @@ function banpemHeaderMap(headers) {
     kabupatenKota: findHeaderIndex(headers, ['Kabupaten/Kota', 'Kabupaten Kota', 'Kab/Kota']),
     targetHa: findHeaderIndex(headers, ['Target (Ha)', 'Target Ha']),
     cpclKab: findHeaderIndex(headers, ['CPCL KAB', 'CPCL Kabupaten']),
+    cpclProv: findHeaderIndex(headers, ['CPCL PROV', 'CPCL Provinsi', 'CPCL Prov']),
     skBrmpHa: findHeaderIndex(headers, ['SK BRMP (Ha)', 'SK BRMP Ha']),
     skKpaHa: findHeaderIndex(headers, ['SK KPA (Ha)', 'SK KPA Ha']),
     skPpkHa: findHeaderIndex(headers, ['SK PPK (Ha)', 'SK PPK Ha']),
@@ -227,6 +228,7 @@ function parseBanpemValues(values) {
     kabupatenKota: textAt(row, map.kabupatenKota),
     targetHa: numeric(valueAt(row, map.targetHa)),
     cpclKab: numeric(valueAt(row, map.cpclKab)),
+    cpclProv: numeric(valueAt(row, map.cpclProv)),
     skBrmpHa: numeric(valueAt(row, map.skBrmpHa)),
     skKpaHa: numeric(valueAt(row, map.skKpaHa)),
     skPpkHa: numeric(valueAt(row, map.skPpkHa)),
@@ -243,7 +245,7 @@ function parseBanpemValues(values) {
   })).filter(row => row.tahun)
 }
 
-const banpemNumericFields = ['targetHa', 'cpclKab', 'skBrmpHa', 'skKpaHa', 'skPpkHa', 'klikHa', 'klikRp', 'kontrakHa', 'nilaiKontrakRp', 'belumKontrakHa', 'spmRp', 'sp2dRp', 'salurHa', 'tanamHa']
+const banpemNumericFields = ['targetHa', 'cpclKab', 'cpclProv', 'skBrmpHa', 'skKpaHa', 'skPpkHa', 'klikHa', 'klikRp', 'kontrakHa', 'nilaiKontrakRp', 'belumKontrakHa', 'spmRp', 'sp2dRp', 'salurHa', 'tanamHa']
 
 function hasBanpemData(row) {
   return banpemNumericFields.some(field => row[field] > 0)

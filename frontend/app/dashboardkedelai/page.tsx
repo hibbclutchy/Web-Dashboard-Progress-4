@@ -2,129 +2,56 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import type { LucideIcon } from 'lucide-react'
-import { Activity, ArrowDownRight, ArrowUpRight, HandCoins, Leaf, Scale, Sprout } from 'lucide-react'
+import { Activity, ArrowDownRight, ArrowUpRight, Factory, HandCoins, Leaf, Scale, Sprout, Warehouse } from 'lucide-react'
+import { CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import DashboardHeader from '../../components/DashboardHeader'
 import { apiUrl } from '../../lib/api'
 import { parseSheetValues, type Region } from '../../lib/data'
 
-type BanpemRow = { tahun: number; targetHa: number; kontrakHa: number; salurHa: number; tanamHa: number }
-type NeracaRow = { tahun: number; bulan: string; totalKetersediaan: number; totalKebutuhan: number; neracaTon: number }
+type BanpemRow = { tahun: number; targetHa: number; cpclKab: number; cpclProv: number; skBrmpHa: number; skKpaHa: number; skPpkHa: number; kontrakHa: number; salurHa: number; tanamHa: number; nilaiKontrakRp: number; spmRp: number; sp2dRp: number }
+type NeracaRow = { tahun: number; bulan: string; totalKetersediaan: number; totalKebutuhan: number; produksiBersih: number; impor: number; ekspor: number; neracaTon: number }
 type SheetResponse = { source?: string; values?: unknown[][]; error?: string }
 type BanpemResponse = { rows?: BanpemRow[]; selectedYear?: number; error?: string }
 type NeracaResponse = { rows?: NeracaRow[]; selectedYear?: number; error?: string }
+type RegionTotal = Region & { productivity: number }
 
 const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : 0
 const money = (value: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Math.round(value))
 const productivity = (row: Region) => row.harvested > 0 ? row.production * 10 / row.harvested : 0
+const sum = <T extends object>(rows: T[], fields: (keyof T[]) extends never ? never : (keyof T)[]) => rows.reduce((total, row) => { fields.forEach(field => { total[field] = number(total[field]) + number(row[field]) }); return total }, {} as Record<keyof T, number>)
 
 function aggregateRegions(rows: Region[]) {
-  const regions = new Map<string, Region>()
+  const grouped = new Map<string, Region>()
   rows.forEach(row => {
     const key = `${row.province}\u0000${row.city}`
-    const current = regions.get(key)
-    if (current) {
-      current.planted += row.planted
-      current.harvested += row.harvested
-      current.production += row.production
-    } else {
-      regions.set(key, { ...row })
-    }
+    const current = grouped.get(key)
+    if (current) { current.planted += row.planted; current.harvested += row.harvested; current.production += row.production }
+    else grouped.set(key, { ...row })
   })
-  return Array.from(regions.values())
+  return [...grouped.values()]
 }
-
-function latestMonitoringYear(rows: Region[]) {
-  return [...new Set(rows.filter(row => row.planted || row.harvested || row.production).map(row => row.year))].sort().at(-1) || ''
-}
-
-function sum<T extends object>(rows: T[], fields: (keyof T)[]) {
-  return rows.reduce((total, row) => {
-    fields.forEach(field => { total[field] = number(total[field]) + number(row[field]) })
-    return total
-  }, {} as Record<keyof T, number>)
+function latestYear(rows: Region[]) { return [...new Set(rows.filter(row => row.planted || row.harvested || row.production).map(row => row.year))].sort().at(-1) || '' }
+function rank(rows: Region[], field: 'planted' | 'harvested' | 'production') { const aggregated = rows.map(row => ({ ...row, metric: Number(row[field]) || 0 })).filter(row => row.metric > 0); const high = [...aggregated].sort((a, b) => b.metric - a.metric).slice(0, 3); const low = [...aggregated].sort((a, b) => a.metric - b.metric).slice(0, 3); return { high, low } }
+function Kpi({ label, value, unit = 'Ton', icon: Icon, danger = false }: { label: string; value: number; unit?: string; icon: typeof Scale; danger?: boolean }) { return <div className="glass rounded-2xl p-5"><div className={`grid h-10 w-10 place-items-center rounded-xl ${danger ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-[#087443]'}`}><Icon size={19} /></div><p className="mt-4 text-xs font-semibold text-slate-500 dark:text-slate-300">{label}</p><b className="mt-1 block text-2xl text-ink dark:text-white">{money(value)} <span className="text-xs font-normal text-slate-400">{unit}</span></b></div> }
+function ListCard({ title, high, low, field, unit }: { title: string; high: Region[]; low: Region[]; field: 'planted' | 'harvested' | 'production'; unit: string }) { const line = (row: Region) => <div key={`${title}-${row.province}-${row.city}`} className="flex items-center justify-between gap-3 text-xs"><span className="truncate text-slate-600 dark:text-slate-300">{row.city}</span><b className="text-slate-700 dark:text-white">{money(row[field])} {unit}</b></div>; return <div className="glass rounded-2xl p-5"><h3 className="font-bold text-ink dark:text-white">{title}</h3><p className="mt-4 text-[10px] font-bold uppercase tracking-wide text-emerald-600">Tertinggi</p><div className="mt-2 space-y-2">{high.map(line)}</div><p className="mt-4 text-[10px] font-bold uppercase tracking-wide text-amber-600">Terendah</p><div className="mt-2 space-y-2">{low.map(line)}</div></div> }
+function ProductivityCard({ rows, average }: { rows: RegionTotal[]; average: number }) { const above = rows.filter(row => row.productivity > average).sort((a, b) => b.productivity - a.productivity).slice(0, 3); const below = rows.filter(row => row.productivity > 0 && row.productivity < average).sort((a, b) => a.productivity - b.productivity).slice(0, 3); const line = (row: RegionTotal) => <div key={`${row.province}-${row.city}`} className="flex items-center justify-between gap-2 text-xs"><span className="truncate text-slate-600 dark:text-slate-300">{row.city}</span><b className="text-slate-700 dark:text-white">{row.productivity.toFixed(2)} Ku/Ha</b></div>; return <div className="glass rounded-2xl p-5"><h3 className="font-bold text-ink dark:text-white">3 Kabupaten di Atas & di Bawah Rata-rata Produktivitas Nasional</h3><p className="mt-2 text-[10px] text-slate-400">Rata-rata nasional: {average.toFixed(2)} Ku/Ha</p><p className="mt-4 text-[10px] font-bold uppercase tracking-wide text-emerald-600">Di atas rata-rata</p><div className="mt-2 space-y-2">{above.map(line)}</div><p className="mt-4 text-[10px] font-bold uppercase tracking-wide text-amber-600">Di bawah rata-rata</p><div className="mt-2 space-y-2">{below.map(line)}</div></div> }
+function BanpemMetric({ label, value, percent, icon: Icon }: { label: string; value: number; percent: string; icon: typeof Scale }) {
+  return <div className="glass rounded-2xl p-5"><div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-[#087443]"><Icon size={19} /></div><p className="mt-4 text-xs font-semibold text-slate-500 dark:text-slate-300">{label}</p><b className="mt-1 block text-2xl text-ink dark:text-white">{money(value)} <span className="text-xs font-normal text-slate-400">Ha ({percent})</span></b></div>
+}function Banpem({ rows, year }: { rows: BanpemRow[]; year: number | null }) {
+  const total = useMemo(() => sum(rows, ['targetHa', 'cpclKab', 'cpclProv', 'skBrmpHa', 'skKpaHa', 'skPpkHa', 'kontrakHa', 'salurHa', 'tanamHa', 'nilaiKontrakRp', 'spmRp', 'sp2dRp']), [rows])
+  const percentage = (value: number, denominator: number) => denominator > 0 ? `${((value / denominator) * 100).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : '0%'
+  const cpclItems = [['CPCL KAB', total.cpclKab, percentage(total.cpclKab, total.targetHa)], ['CPCL PROV', total.cpclProv, percentage(total.cpclProv, total.targetHa)], ['SK BRMP', total.skBrmpHa, percentage(total.skBrmpHa, total.targetHa)], ['SK KPA', total.skKpaHa, percentage(total.skKpaHa, total.targetHa)], ['SK PPK', total.skPpkHa, percentage(total.skPpkHa, total.targetHa)]] as [string, number, string][]
+  return <section className="mt-6"><div className="mb-3"><h2 className="font-bold text-ink dark:text-white">BANPEM Tahun {year ?? 'Belum tersedia'}</h2><p className="mt-1 text-xs text-slate-400">Rekap nasional seluruh wilayah.</p></div><div className="grid gap-4 lg:grid-cols-[1fr_3fr]"><Kpi label="Target" value={total.targetHa || 0} unit="Ha" icon={Leaf} /><div className="glass rounded-2xl p-5"><p className="text-sm font-bold text-ink dark:text-white">CPCL</p><div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-5">{cpclItems.map(([label, value, percent]) => <div key={label}><p className="text-[10px] text-slate-400">{label}</p><b className="text-lg text-ink dark:text-white">{money(value)} Ha{percent && <span className="ml-1 text-sm font-semibold text-slate-500 dark:text-slate-300">({percent})</span>}</b>{label === 'CPCL KAB' && value > 0 && <p className="mt-1 text-[10px] font-bold text-red-500">On Progress</p>}</div>)}</div></div></div><div className="mt-4 grid gap-4 sm:grid-cols-3"><BanpemMetric label="Kontrak" value={total.kontrakHa || 0} percent={percentage(total.kontrakHa, total.skPpkHa)} icon={HandCoins} /><BanpemMetric label="Salur" value={total.salurHa || 0} percent={percentage(total.salurHa, total.kontrakHa)} icon={Sprout} /><BanpemMetric label="Tanam" value={total.tanamHa || 0} percent={percentage(total.tanamHa, total.kontrakHa)} icon={Activity} /></div><div className="mt-4 grid gap-4 sm:grid-cols-4"><Kpi label="OS Kontrak" value={(total.nilaiKontrakRp || 0) - (total.sp2dRp || 0)} unit="Rp" icon={Scale} /><Kpi label="SP2D" value={total.sp2dRp || 0} unit="Rp" icon={Scale} /><Kpi label="SPM" value={total.spmRp || 0} unit="Rp" icon={Scale} /><Kpi label="Total Kontrak" value={total.nilaiKontrakRp || 0} unit="Rp" icon={Scale} /></div></section>
 }
 
 export default function KedelaiSummaryPage() {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [monitoringRows, setMonitoringRows] = useState<Region[]>([])
-  const [monitoringYear, setMonitoringYear] = useState('')
-  const [banpemRows, setBanpemRows] = useState<BanpemRow[]>([])
-  const [banpemYear, setBanpemYear] = useState<number | null>(null)
-  const [neracaRows, setNeracaRows] = useState<NeracaRow[]>([])
-  const [neracaYear, setNeracaYear] = useState<number | null>(null)
-
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      setError('')
-      try {
-        const [sheetResult, banpemResult, neracaResult] = await Promise.all([
-          fetch(apiUrl('/api/sheets'), { cache: 'no-store' }),
-          fetch(apiUrl('/api/banpem-sheet'), { cache: 'no-store' }),
-          fetch(apiUrl('/api/neraca-sheet'), { cache: 'no-store' }),
-        ])
-        const sheet = await sheetResult.json() as SheetResponse
-        const banpem = await banpemResult.json() as BanpemResponse
-        const neraca = await neracaResult.json() as NeracaResponse
-        if (!sheetResult.ok) throw new Error(sheet.error || 'Gagal mengambil data monitoring')
-        if (!banpemResult.ok) throw new Error(banpem.error || 'Gagal mengambil data BANPEM')
-        if (!neracaResult.ok) throw new Error(neraca.error || 'Gagal mengambil data neraca')
-
-        const nextMonitoringRows = sheet.source === 'google-sheets' ? parseSheetValues(sheet.values || []) : []
-        const nextMonitoringYear = latestMonitoringYear(nextMonitoringRows)
-        setMonitoringRows(nextMonitoringRows)
-        setMonitoringYear(nextMonitoringYear)
-        setBanpemRows(Array.isArray(banpem.rows) ? banpem.rows : [])
-        setBanpemYear(number(banpem.selectedYear) || null)
-
-        const selectedNeracaYear = number(neraca.selectedYear)
-        const fullYearResult = selectedNeracaYear
-          ? await fetch(apiUrl(`/api/neraca-sheet?year=${selectedNeracaYear}&month=Semua%20Bulan`), { cache: 'no-store' })
-          : null
-        const fullYear = fullYearResult?.ok ? await fullYearResult.json() as NeracaResponse : neraca
-        setNeracaRows(Array.isArray(fullYear.rows) ? fullYear.rows : [])
-        setNeracaYear(number(fullYear.selectedYear) || selectedNeracaYear || null)
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Gagal memuat ringkasan data.')
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [])
-
-  const productivitySummary = useMemo(() => {
-    const rows = aggregateRegions(monitoringRows.filter(row => row.year === monitoringYear))
-    const productive = rows.filter(row => row.harvested > 0)
-    const average = productive.length ? productive.reduce((total, row) => total + productivity(row), 0) / productive.length : 0
-    return {
-      average,
-      top: rows.filter(row => productivity(row) > average).sort((a, b) => productivity(b) - productivity(a)).slice(0, 2),
-      bottom: rows.filter(row => productivity(row) > 0 && productivity(row) < average).sort((a, b) => productivity(a) - productivity(b)).slice(0, 2),
-    }
-  }, [monitoringRows, monitoringYear])
-  const banpemTotals = useMemo(() => sum(banpemRows, ['targetHa', 'kontrakHa', 'salurHa', 'tanamHa']), [banpemRows])
-  const neracaTotals = useMemo(() => sum(neracaRows, ['totalKetersediaan', 'totalKebutuhan', 'neracaTon']), [neracaRows])
-
-  return <div className="min-h-screen bg-canvas dark:bg-[#061a13] grid-pattern transition-colors"><DashboardHeader subtitle="Kedelai Insight" title="Ringkasan Kedelai" backHref="/" /><main className="p-5 md:p-9">
-    <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><h1 className="text-3xl font-bold tracking-tight text-ink dark:text-white md:text-[34px]">Ringkasan Kedelai</h1><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Ikhtisar nasional tahun data terbaru dari Monitoring, BANPEM, dan Neraca Pangan.</p></div><Link href="/dashboardkedelai/pilih" className="inline-flex w-fit rounded-xl bg-[#0b6b43] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-[#0b6b43]/20">Pilih Dashboard</Link></div>
-    {error && <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">{error}</div>}
-    <div className="glass rounded-2xl p-6"><p className="text-xs font-bold uppercase tracking-wide text-slate-400">Produktivitas Nasional Tahun {monitoringYear || 'Belum tersedia'}</p><div className="mt-3 flex flex-wrap items-end gap-3"><b className="text-4xl text-[#087443] dark:text-[#82d3a4]">{productivitySummary.average.toFixed(2)}</b><span className="pb-1 text-sm text-slate-400">Ku/Ha</span></div><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Rata-rata nasional menjadi pembanding wilayah di atas dan di bawah rata-rata.</p></div>
-    <div className="mt-6 grid gap-6 lg:grid-cols-2"><RegionList title="Di atas rata-rata nasional" rows={productivitySummary.top} positive /><RegionList title="Di bawah rata-rata nasional" rows={productivitySummary.bottom} /></div>
-    <section className="mt-6"><div className="mb-3"><h2 className="font-bold text-ink dark:text-white">Ringkasan BANPEM Tahun {banpemYear ?? 'Belum tersedia'}</h2><p className="mt-1 text-xs text-slate-400">Akumulasi seluruh kabupaten/kota pada tahun data terbaru.</p></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Kpi label="Target" value={banpemTotals.targetHa || 0} unit="Ha" icon={Leaf} /><Kpi label="Kontrak" value={banpemTotals.kontrakHa || 0} unit="Ha" icon={HandCoins} /><Kpi label="Salur" value={banpemTotals.salurHa || 0} unit="Ha" icon={Sprout} /><Kpi label="Tanam" value={banpemTotals.tanamHa || 0} unit="Ha" icon={Activity} /></div></section>
-    <section className="mt-6"><div className="mb-3"><h2 className="font-bold text-ink dark:text-white">Ringkasan Neraca Tahun {neracaYear ?? 'Belum tersedia'}</h2><p className="mt-1 text-xs text-slate-400">Akumulasi seluruh bulan pada tahun data terbaru.</p></div><div className="grid gap-4 sm:grid-cols-3"><Kpi label="Total Ketersediaan" value={neracaTotals.totalKetersediaan || 0} unit="Ton" icon={Scale} /><Kpi label="Total Kebutuhan" value={neracaTotals.totalKebutuhan || 0} unit="Ton" icon={Activity} /><Kpi label="Neraca" value={neracaTotals.neracaTon || 0} unit="Ton" icon={neracaTotals.neracaTon >= 0 ? ArrowUpRight : ArrowDownRight} positive={neracaTotals.neracaTon >= 0} /></div></section>
-    {loading && <p className="mt-6 text-center text-sm text-slate-400">Memuat ringkasan data...</p>}
-  </main></div>
+  const [monitoring, setMonitoring] = useState<Region[]>([]); const [banpem, setBanpem] = useState<BanpemRow[]>([]); const [neraca, setNeraca] = useState<NeracaRow[]>([]); const [monitoringYear, setMonitoringYear] = useState(''); const [banpemYear, setBanpemYear] = useState<number | null>(null); const [neracaYear, setNeracaYear] = useState<number | null>(null); const [error, setError] = useState('');
+  useEffect(() => { (async () => { try { const [s, b, n] = await Promise.all([fetch(apiUrl('/api/sheets'), { cache: 'no-store' }), fetch(apiUrl('/api/banpem-sheet'), { cache: 'no-store' }), fetch(apiUrl('/api/neraca-sheet'), { cache: 'no-store' })]); const sheet = await s.json() as SheetResponse; const banpemData = await b.json() as BanpemResponse; const neracaData = await n.json() as NeracaResponse; if (!s.ok) throw new Error(sheet.error || 'Gagal mengambil data monitoring'); if (!b.ok) throw new Error(banpemData.error || 'Gagal mengambil data BANPEM'); if (!n.ok) throw new Error(neracaData.error || 'Gagal mengambil data neraca'); const rows = sheet.source === 'google-sheets' ? parseSheetValues(sheet.values || []) : []; setMonitoring(rows); setMonitoringYear(latestYear(rows)); setBanpem(banpemData.rows || []); setBanpemYear(number(banpemData.selectedYear) || null); const selected = number(neracaData.selectedYear); const full = selected ? await fetch(apiUrl(`/api/neraca-sheet?year=${selected}&month=Semua%20Bulan`), { cache: 'no-store' }) : null; const fullData = full?.ok ? await full.json() as NeracaResponse : neracaData; setNeraca(fullData.rows || []); setNeracaYear(number(fullData.selectedYear) || selected || null); } catch (e) { setError(e instanceof Error ? e.message : 'Gagal memuat ringkasan data.') } })() }, [])
+  const yearRows = useMemo(() => aggregateRegions(monitoring.filter(row => row.year === monitoringYear)), [monitoring, monitoringYear]); const totals = useMemo(() => sum(monitoring.filter(row => row.year === monitoringYear), ['planted', 'harvested', 'production']), [monitoring, monitoringYear]); const average = useMemo(() => { const productive = yearRows.filter(row => row.harvested > 0); return productive.length ? productive.reduce((v, row) => v + productivity(row), 0) / productive.length : 0 }, [yearRows]); const ranked = useMemo(() => ({ planted: rank(yearRows, 'planted'), harvested: rank(yearRows, 'harvested'), production: rank(yearRows, 'production') }), [yearRows]); const regionProductivity = useMemo(() => yearRows.map(row => ({ ...row, productivity: productivity(row) })), [yearRows]); const productionTrend = useMemo(() => [...new Set(monitoring.map(row => row.year))].sort().map(year => ({ year, production: monitoring.filter(row => row.year === year).reduce((v, row) => v + row.production, 0) })), [monitoring]); const productionChartMax = useMemo(() => Math.max(1, ...productionTrend.map(row => row.production)) * 1.15, [productionTrend]); const neracaTotals = useMemo(() => sum(neraca, ['totalKetersediaan', 'totalKebutuhan', 'produksiBersih', 'impor', 'ekspor', 'neracaTon']), [neraca]); const surplus = neracaTotals.neracaTon >= 0;
+  return <div className="min-h-screen bg-canvas dark:bg-[#061a13] grid-pattern"><DashboardHeader subtitle="Kedelai Insight" title="Ringkasan Kedelai" backHref="/" /><main className="p-5 md:p-9"><div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><h1 className="text-3xl font-bold tracking-tight text-ink dark:text-white">Ringkasan Kedelai</h1><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Ikhtisar produksi, neraca, produktivitas, dan BANPEM.</p></div><Link href="/dashboardkedelai/pilih" className="inline-flex w-fit rounded-xl bg-[#0b6b43] px-5 py-3 text-sm font-bold text-white">Pilih Dashboard</Link></div>{error && <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">{error}</div>}
+  <section className="grid gap-6 lg:grid-cols-[2fr_1fr]"><div className="glass rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Tren Produksi dari Tahun ke Tahun</h2><div className="mt-5 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={productionTrend} margin={{ top: 24, right: 12, left: 8, bottom: 8 }}><CartesianGrid vertical={false} stroke="#e9edf4" /><XAxis dataKey="year" axisLine={false} tickLine={false} /><Tooltip formatter={(value) => `${money(Number(value))} Ton`} /><Line type="monotone" dataKey="production" name="Produksi" stroke="#159a5c" strokeWidth={3} dot={{ r: 5, fill: '#159a5c', stroke: '#ffffff', strokeWidth: 2 }} activeDot={{ r: 7 }}><LabelList dataKey="production" position="top" offset={10} formatter={(value: unknown) => `${money(Number(value))} Ton`} fill="#087443" fontSize={10} /></Line></LineChart></ResponsiveContainer></div></div><div className="glass rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">Ringkasan Neraca Tahun {neracaYear ?? 'Belum tersedia'}</h2><div className="mt-6 space-y-5"><SummaryLine label="Kebutuhan" value={neracaTotals.totalKebutuhan} /><SummaryLine label="Total Ketersediaan" value={neracaTotals.totalKetersediaan} breakdown={[['Produksi Bersih', neracaTotals.produksiBersih], ['Impor', neracaTotals.impor], ['Ekspor', neracaTotals.ekspor]]} /><SummaryLine label="Total Neraca (Ton)" value={neracaTotals.neracaTon} tone={surplus ? 'text-emerald-600' : 'text-red-600'} /></div></div></section>  <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Kpi label="Tanam" value={totals.planted} unit="Ha" icon={Sprout} /><Kpi label="Panen" value={totals.harvested} unit="Ha" icon={Leaf} /><Kpi label="Produksi" value={totals.production} icon={Factory} /><Kpi label="Rata-rata Nasional Produktivitas" value={average} unit="Ku/Ha" icon={Activity} /></section>
+  <section className="mt-6 grid gap-4 lg:grid-cols-2 xl:grid-cols-4"><ListCard title="Daerah Total Tanam Tertinggi & Terendah" {...ranked.planted} field="planted" unit="Ha" /><ListCard title="Daerah Total Panen Tertinggi & Terendah" {...ranked.harvested} field="harvested" unit="Ha" /><ListCard title="Daerah Total Produksi Tertinggi & Terendah" {...ranked.production} field="production" unit="Ton" /><ProductivityCard rows={regionProductivity} average={average} /></section>
+  <Banpem rows={banpem} year={banpemYear} /></main></div>
+}function SummaryLine({ label, value, breakdown, tone = 'text-ink dark:text-white' }: { label: string; value: number; breakdown?: [string, number][]; tone?: string }) {
+  return <div className="border-b border-slate-100 pb-5 dark:border-white/10"><div className="flex items-baseline justify-between gap-4"><p className="min-w-0 text-xs text-slate-500 dark:text-slate-300">{label}</p><b className={`shrink-0 whitespace-nowrap text-lg ${tone}`}>{money(value)} Ton</b></div>{breakdown && <div className="mt-3 grid grid-cols-3 gap-3">{breakdown.map(([name, amount]) => <div key={name} className="min-w-0 rounded-xl bg-slate-50 p-3 text-center dark:bg-white/5"><p className="truncate text-[9px] font-semibold text-slate-400">{name}</p><b className="mt-1 block whitespace-nowrap text-sm text-ink dark:text-white">{money(amount)} <span className="text-[10px] font-normal text-slate-400">Ton</span></b></div>)}</div>}</div>
 }
-
-function RegionList({ title, rows, positive = false }: { title: string; rows: Region[]; positive?: boolean }) {
-  return <div className="glass rounded-2xl p-5"><h2 className="font-bold text-ink dark:text-white">{title}</h2><div className="mt-4 space-y-3">{rows.map(row => <div key={`${row.province}-${row.city}`} className="flex items-center justify-between gap-3"><div><b className="block text-sm text-slate-700 dark:text-white">{row.city}</b><span className="text-xs text-slate-400">{row.province}</span></div><b className={positive ? 'text-emerald-600' : 'text-amber-600'}>{productivity(row).toFixed(2)} Ku/Ha</b></div>)}{!rows.length && <p className="py-5 text-center text-xs text-slate-400">Belum ada wilayah yang memenuhi kriteria.</p>}</div></div>
-}
-
-function Kpi({ label, value, unit, icon: Icon, positive }: { label: string; value: number; unit: string; icon: LucideIcon; positive?: boolean }) {
-  return <div className="glass rounded-2xl p-5"><div className={`grid h-10 w-10 place-items-center rounded-xl ${positive === false ? 'bg-red-50 text-red-600 dark:bg-red-500/10' : 'bg-emerald-50 text-[#087443] dark:bg-emerald-500/10'}`}><Icon size={19} /></div><p className="mt-5 text-xs font-semibold text-slate-500 dark:text-slate-300">{label}</p><div className="mt-1 flex items-baseline gap-1"><b className="text-2xl text-ink dark:text-white">{money(value)}</b><span className="text-xs text-slate-400">{unit}</span></div></div>
-}
-
-
