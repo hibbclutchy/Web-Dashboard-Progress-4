@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
@@ -27,6 +27,11 @@ function sumRows(rows: NeracaRow[]): Totals {
   return rows.reduce((total, row) => { fields.forEach(field => { total[field] += row[field] }); return total }, { stokAwal: 0, produksi: 0, tercecer: 0, produksiBersih: 0, impor: 0, ekspor: 0, totalKetersediaan: 0, rumahTangga: 0, benih: 0, industriHoreka: 0, industriPakan: 0, totalKebutuhan: 0, neracaTon: 0 })
 }
 
+function aggregateRows(rows: NeracaRow[]): NeracaRow[] {
+  if (!rows.length) return []
+  const totals = sumRows(rows)
+  return [{ tahun: rows[0].tahun, bulan: allMonthsLabel, ...totals }]
+}
 function Status({ source, message }: { source: DataSource; message: string }) {
   const warning = source === 'demo' || source === 'error'
   return <div className={`mb-6 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${warning ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}><span className={`h-2 w-2 rounded-full ${source === 'loading' ? 'animate-pulse' : ''} ${warning ? 'bg-amber-500' : 'bg-emerald-500'}`} /><b>{source === 'loading' ? 'Memuat data' : source === 'sheet' ? 'Google Sheets tersambung' : source === 'demo' ? 'Mode data contoh' : 'Koneksi bermasalah'}</b><span className="opacity-80">{message}</span></div>
@@ -59,7 +64,7 @@ export default function KedelaiNeracaPage() {
     try {
       const params = new URLSearchParams()
       if (nextYear) params.set('year', String(nextYear))
-      if (nextMonth) params.set('month', nextMonth)
+      if (nextMonth && nextMonth !== allMonthsLabel) params.set('month', nextMonth)
       if (refresh) params.set('refresh', '1')
       const response = await fetch(apiUrl(`/api/neraca-sheet${params.size ? `?${params}` : ''}`), { cache: 'no-store' })
       const payload = await response.json() as NeracaResponse
@@ -74,14 +79,14 @@ export default function KedelaiNeracaPage() {
     } catch (error) { setSource('error'); setRows([]); setMessage(error instanceof Error ? error.message : 'Gagal menghubungkan ke backend.') }
   }
 
-  useEffect(() => { loadData(undefined, allMonthsLabel) }, [])
+  useEffect(() => { loadData(2026, allMonthsLabel) }, [])
   const totals = useMemo(() => sumRows(rows), [rows])
-  const changeYear = (value: number) => { setFilterOpen(false); loadData(value) }
+  const changeYear = (value: number) => { setFilterOpen(false); loadData(value, allMonthsLabel) }
   const changeMonth = (value: string) => { setFilterOpen(false); loadData(year || undefined, value) }
   const deficit = totals.neracaTon < 0
 
-  return <div className="min-h-screen bg-canvas dark:bg-[#061a13] grid-pattern transition-colors"><DashboardHeader subtitle="Kedelai Insight" title="Dashboard Neraca Pangan" backHref="/dashboardkedelai/pilih" onFilterClick={() => setFilterOpen(open => !open)} /><main className="p-5 md:p-9">
-    <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><h1 className="text-3xl font-bold tracking-tight text-ink dark:text-white md:text-[34px]">Dashboard Neraca Pangan</h1><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Pantau ketersediaan, kebutuhan, dan neraca pangan kedelai nasional.</p></div><button onClick={() => loadData(year || undefined, month, true)} disabled={source === 'loading'} className="flex w-fit items-center gap-2 rounded-xl bg-white px-4 py-3 text-xs font-bold text-slate-600 shadow-sm disabled:opacity-60 dark:bg-white/10 dark:text-white"><RefreshCw size={16} className={source === 'loading' ? 'animate-spin' : ''} />Refresh</button></div>
+  return <div className="min-h-screen bg-canvas dark:bg-[#061a13] grid-pattern transition-colors"><DashboardHeader subtitle="Kedelai Insight" title={month === allMonthsLabel ? `Neraca Tahun ${year ?? 2026}` : `Neraca ${month} ${year ?? 2026}`} backHref="/dashboardkedelai/pilih" onFilterClick={() => setFilterOpen(open => !open)} /><main className="p-5 md:p-9">
+    <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><h1 className="text-3xl font-bold tracking-tight text-ink dark:text-white md:text-[34px]">{month === allMonthsLabel ? `Neraca Tahun ${year ?? 2026}` : `Neraca ${month} ${year ?? 2026}`}</h1><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Pantau ketersediaan, kebutuhan, dan neraca pangan kedelai nasional.</p></div><button onClick={() => loadData(year || undefined, month, true)} disabled={source === 'loading'} className="flex w-fit items-center gap-2 rounded-xl bg-white px-4 py-3 text-xs font-bold text-slate-600 shadow-sm disabled:opacity-60 dark:bg-white/10 dark:text-white"><RefreshCw size={16} className={source === 'loading' ? 'animate-spin' : ''} />Refresh</button></div>
     <Status source={source} message={message} />
     {filterOpen && <div className="fixed right-5 top-[var(--dashboard-header-height)] z-30 w-[min(420px,calc(100vw-2.5rem))] glass rounded-2xl p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><b className="text-sm text-ink dark:text-white">Filter data</b><button onClick={() => setFilterOpen(false)} className="text-slate-400" aria-label="Tutup filter"><X size={17} /></button></div><div className="grid grid-cols-2 gap-3"><label><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">Tahun</span><div className="relative mt-2"><select value={year ?? ''} onChange={event => changeYear(Number(event.target.value))} className="h-[38px] w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-[#102b20] dark:text-white">{years.map(item => <option key={item} value={item}>{item}</option>)}</select><ChevronDown size={14} className="pointer-events-none absolute right-3 top-3 text-slate-400" /></div></label><label><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">Bulan</span><div className="relative mt-2"><select value={month} onChange={event => changeMonth(event.target.value)} className="h-[38px] w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-[#102b20] dark:text-white"><option value={allMonthsLabel}>{allMonthsLabel}</option>{months.map(item => <option key={item} value={item}>{item}</option>)}</select><ChevronDown size={14} className="pointer-events-none absolute right-3 top-3 text-slate-400" /></div></label></div></div>}
     <div className="mb-6 flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/45 px-4 py-3 text-xs text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"><span>Filter aktif</span><b className="text-sm text-[#087443] dark:text-[#82d3a4]">{month || 'Belum tersedia'} {year ?? 'Belum tersedia'}</b></div>
@@ -90,3 +95,4 @@ export default function KedelaiNeracaPage() {
     <section className={`mt-6 rounded-2xl p-6 ${deficit ? 'bg-red-600 text-white' : 'bg-[#087443] text-white'}`}><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-sm font-bold uppercase tracking-wide text-white/75">Neraca (Ton)</p><b className="mt-2 block text-4xl">{money(totals.neracaTon)} Ton</b><p className="mt-2 text-sm text-white/80">Total Ketersediaan: {money(totals.totalKetersediaan)} Ton dikurangi Total Kebutuhan: {money(totals.totalKebutuhan)} Ton</p></div><Scale size={48} className="text-white/80" /></div></section>
   </main></div>
 }
+
