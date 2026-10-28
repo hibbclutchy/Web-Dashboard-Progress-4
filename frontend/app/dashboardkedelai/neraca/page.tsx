@@ -19,7 +19,8 @@ const fields: (keyof Totals)[] = ['stokAwal', 'produksi', 'tercecer', 'produksiB
 const money = (value: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Math.round(value))
 const numeric = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : 0
 
-function normalizeRow(row: NeracaRow): NeracaRow {
+const monthIndex = (value: string) => ({ januari: 0, jan: 0, februari: 1, feb: 1, maret: 2, mar: 2, april: 3, apr: 3, mei: 4, may: 4, juni: 5, jun: 5, juli: 6, jul: 6, agustus: 7, agu: 7, agt: 7, aug: 7, september: 8, sep: 8, oktober: 9, okt: 9, oct: 9, november: 10, nov: 10, desember: 11, des: 11, dec: 11 } as Record<string, number>)[String(value || '').trim().toLowerCase()] ?? -1
+function calculatedAvailability(rows: NeracaRow[], year: number, selectedMonth: string) { const yearRows = rows.filter(row => row.tahun === year); if (selectedMonth !== allMonthsLabel) { const selected = yearRows.find(row => monthIndex(row.bulan) === monthIndex(selectedMonth)); return selected ? selected.stokAwal + selected.produksiBersih + selected.impor - selected.ekspor : 0 } const january = yearRows.find(row => monthIndex(row.bulan) === 0); return (january?.stokAwal || 0) + yearRows.reduce((total, row) => total + row.produksiBersih + row.impor - row.ekspor, 0) }function normalizeRow(row: NeracaRow): NeracaRow {
   return { tahun: numeric(row.tahun), bulan: String(row.bulan || '').trim(), stokAwal: numeric(row.stokAwal), produksi: numeric(row.produksi), tercecer: numeric(row.tercecer), produksiBersih: numeric(row.produksiBersih), impor: numeric(row.impor), ekspor: numeric(row.ekspor), totalKetersediaan: numeric(row.totalKetersediaan), rumahTangga: numeric(row.rumahTangga), benih: numeric(row.benih), industriHoreka: numeric(row.industriHoreka), industriPakan: numeric(row.industriPakan), totalKebutuhan: numeric(row.totalKebutuhan), neracaTon: numeric(row.neracaTon) }
 }
 
@@ -51,6 +52,7 @@ export default function KedelaiNeracaPage() {
   const [year, setYear] = useState<number | null>(null)
   const [month, setMonth] = useState('')
   const [rows, setRows] = useState<NeracaRow[]>([])
+  const [calculationRows, setCalculationRows] = useState<NeracaRow[]>([])
 
   useEffect(() => {
     const body = document.body, html = document.documentElement
@@ -72,8 +74,13 @@ export default function KedelaiNeracaPage() {
       setYears(Array.isArray(payload.years) ? payload.years.filter(Number.isFinite).sort((a, b) => a - b) : [])
       setMonths(Array.isArray(payload.months) ? payload.months : [])
       setYear(numeric(payload.selectedYear) || nextYear || null)
-      setMonth(payload.selectedMonth || nextMonth || allMonthsLabel)
-      setRows(Array.isArray(payload.rows) ? payload.rows.map(normalizeRow) : [])
+      const normalizedRows = Array.isArray(payload.rows) ? payload.rows.map(normalizeRow) : []
+      const selectedMonth = nextMonth || payload.selectedMonth || allMonthsLabel
+      const selectedYear = numeric(payload.selectedYear) || nextYear || 2026
+      const calculationRows = selectedMonth === allMonthsLabel ? normalizedRows : (await (async () => { const allResponse = await fetch(apiUrl(`/api/neraca-sheet?year=${selectedYear}`), { cache: 'no-store' }); if (!allResponse.ok) return normalizedRows; const allPayload = await allResponse.json() as NeracaResponse; return Array.isArray(allPayload.rows) ? allPayload.rows.map(normalizeRow) : normalizedRows })())
+      setMonth(selectedMonth)
+      setCalculationRows(calculationRows)
+      setRows(selectedMonth === allMonthsLabel ? aggregateRows(normalizedRows) : normalizedRows)
       setSource(payload.source === 'sheet' ? 'sheet' : 'demo')
       setMessage(payload.message || `${payload.rows?.length || 0} data neraca tersedia.`)
     } catch (error) { setSource('error'); setRows([]); setMessage(error instanceof Error ? error.message : 'Gagal menghubungkan ke backend.') }
@@ -83,6 +90,7 @@ export default function KedelaiNeracaPage() {
   const totals = useMemo(() => sumRows(rows), [rows])
   const changeYear = (value: number) => { setFilterOpen(false); loadData(value, allMonthsLabel) }
   const changeMonth = (value: string) => { setFilterOpen(false); loadData(year || undefined, value) }
+  const displayStokAwal = month === allMonthsLabel ? (calculationRows.find(row => monthIndex(row.bulan) === 0)?.stokAwal || 0) : totals.stokAwal
   const deficit = totals.neracaTon < 0
 
   return <div className="min-h-screen bg-canvas dark:bg-[#061a13] grid-pattern transition-colors"><DashboardHeader subtitle="Kedelai Insight" title={month === allMonthsLabel ? `Neraca Tahun ${year ?? 2026}` : `Neraca ${month} ${year ?? 2026}`} backHref="/dashboardkedelai/pilih" onFilterClick={() => setFilterOpen(open => !open)} /><main className="p-5 md:p-9">
@@ -90,9 +98,20 @@ export default function KedelaiNeracaPage() {
     <Status source={source} message={message} />
     {filterOpen && <div className="fixed right-5 top-[var(--dashboard-header-height)] z-30 w-[min(420px,calc(100vw-2.5rem))] glass rounded-2xl p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><b className="text-sm text-ink dark:text-white">Filter data</b><button onClick={() => setFilterOpen(false)} className="text-slate-400" aria-label="Tutup filter"><X size={17} /></button></div><div className="grid grid-cols-2 gap-3"><label><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">Tahun</span><div className="relative mt-2"><select value={year ?? ''} onChange={event => changeYear(Number(event.target.value))} className="h-[38px] w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-[#102b20] dark:text-white">{years.map(item => <option key={item} value={item}>{item}</option>)}</select><ChevronDown size={14} className="pointer-events-none absolute right-3 top-3 text-slate-400" /></div></label><label><span className="block text-[10px] font-bold text-slate-500 dark:text-slate-200">Bulan</span><div className="relative mt-2"><select value={month} onChange={event => changeMonth(event.target.value)} className="h-[38px] w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-[#102b20] dark:text-white"><option value={allMonthsLabel}>{allMonthsLabel}</option>{months.map(item => <option key={item} value={item}>{item}</option>)}</select><ChevronDown size={14} className="pointer-events-none absolute right-3 top-3 text-slate-400" /></div></label></div></div>}
     <div className="mb-6 flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/45 px-4 py-3 text-xs text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"><span>Filter aktif</span><b className="text-sm text-[#087443] dark:text-[#82d3a4]">{month || 'Belum tersedia'} {year ?? 'Belum tersedia'}</b></div>
-    <section><div className="mb-3"><h2 className="font-bold text-ink dark:text-white">Total Ketersediaan</h2><p className="mt-1 text-xs text-slate-400">Komponen ketersediaan pangan pada periode aktif.</p></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"><Metric label="Total Ketersediaan" value={totals.totalKetersediaan} icon={Scale} /><Metric label="Impor" value={totals.impor} icon={Download} /><Metric label="Ekspor" value={totals.ekspor} icon={ArrowUpRight} tone="orange" /><Metric label="Stok Awal" value={totals.stokAwal} icon={Warehouse} /><Metric label="Produksi" value={totals.produksi} icon={Sprout} /><Metric label="Tercecer" value={totals.tercecer} icon={PackageOpen} tone="orange" /><Metric label="Produksi Bersih" value={totals.produksiBersih} icon={Leaf} /></div></section>
+    <section><div className="mb-3"><h2 className="font-bold text-ink dark:text-white">Total Ketersediaan</h2><p className="mt-1 text-xs text-slate-400">Komponen ketersediaan pangan pada periode aktif.</p></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"><Metric label="Total Ketersediaan" value={calculatedAvailability(calculationRows, year || 2026, month)} icon={Scale} /><Metric label="Stok Awal" value={displayStokAwal} icon={Warehouse} /><Metric label="Produksi" value={totals.produksi} icon={Sprout} /><Metric label="Tercecer" value={totals.tercecer} icon={PackageOpen} tone="orange" /><Metric label="Produksi Bersih" value={totals.produksiBersih} icon={Leaf} /><Metric label="Impor" value={totals.impor} icon={Download} /><Metric label="Ekspor" value={totals.ekspor} icon={ArrowUpRight} tone="orange" /></div></section>
     <section className="mt-6"><div className="mb-3"><h2 className="font-bold text-ink dark:text-white">Total Kebutuhan</h2><p className="mt-1 text-xs text-slate-400">Komponen kebutuhan pangan pada periode aktif.</p></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Total Kebutuhan" value={totals.totalKebutuhan} icon={Scale} /><Metric label="Benih" value={totals.benih} icon={Leaf} /><Metric label="Industri Pakan" value={totals.industriPakan} icon={Factory} /><Metric label="Industri dan Horeka" value={totals.industriHoreka} icon={ShoppingBasket} /><Metric label="Rumah Tangga" value={totals.rumahTangga} icon={Warehouse} /></div></section>
-    <section className={`mt-6 rounded-2xl p-6 ${deficit ? 'bg-red-600 text-white' : 'bg-[#087443] text-white'}`}><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-sm font-bold uppercase tracking-wide text-white/75">Neraca (Ton)</p><b className="mt-2 block text-4xl">{money(totals.neracaTon)} Ton</b><p className="mt-2 text-sm text-white/80">Total Ketersediaan: {money(totals.totalKetersediaan)} Ton dikurangi Total Kebutuhan: {money(totals.totalKebutuhan)} Ton</p></div><Scale size={48} className="text-white/80" /></div></section>
+    <section className={`mt-6 rounded-2xl p-6 ${deficit ? 'bg-red-600 text-white' : 'bg-[#087443] text-white'}`}><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-sm font-bold uppercase tracking-wide text-white/75">Neraca (Ton)</p><b className="mt-2 block text-4xl">{money(totals.neracaTon)} Ton</b><p className="mt-2 text-sm text-white/80">Total Ketersediaan: {money(calculatedAvailability(calculationRows, year || 2026, month))} Ton dikurangi Total Kebutuhan: {money(totals.totalKebutuhan)} Ton</p></div><Scale size={48} className="text-white/80" /></div></section>
   </main></div>
 }
+
+
+
+
+
+
+
+
+
+
+
 
